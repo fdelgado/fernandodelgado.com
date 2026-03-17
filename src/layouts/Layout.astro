@@ -1,0 +1,114 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  bodyClass?: string;
+}
+
+const { title, description = 'Fernando Delgado — Product Executive | 5x Founder | Ex-Google, YouTube, Yahoo', bodyClass = '' } = Astro.props;
+const GA_ID = 'G-BFKDHKEV28';
+const currentPath = Astro.url.pathname;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+    <link rel="icon" type="image/png" href="/images/logo.png" />
+
+    <!-- Google Analytics -->
+    <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}></script>
+    <script define:vars={{ GA_ID }}>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() { dataLayer.push(arguments); }
+      gtag('js', new Date());
+      gtag('config', GA_ID);
+    </script>
+  </head>
+  <body class={`canvas-style-normal logo-image ${bodyClass}`}>
+    <div id="canvas">
+
+      <!-- Mobile nav (hidden by default, toggled by JS) -->
+      <div id="mobileNav">
+        <div class="wrapper">
+          <nav class="main-nav">
+            <ul>
+              <li class={currentPath === '/' ? 'active' : ''}><a href="/">About</a></li>
+              <li class={currentPath === '/experience' ? 'active' : ''}><a href="/experience">Experience</a></li>
+              <li class={currentPath === '/contact' ? 'active' : ''}><a href="/contact">Contact</a></li>
+              <li class={currentPath.startsWith('/blog') ? 'active' : ''}><a href="/blog">Blog</a></li>
+              <li><a href="https://embracingchangeinspiringgrowth.substack.com" target="_blank" rel="noopener">Newsletter</a></li>
+            </ul>
+          </nav>
+        </div>
+      </div>
+
+      <div id="mobileMenuLink"><a id="mobileMenuToggle">Menu</a></div>
+
+      <header id="header" class="clear">
+        <div id="lower-logo">
+          <a href="/"><img src="/images/logo.png" alt="Fernando Delgado" /></a>
+        </div>
+
+        <div class="site-tag-line">
+          <span>Product Executive</span>
+        </div>
+
+        <div id="topNav">
+          <nav class="main-nav">
+            <ul>
+              <li class={currentPath === '/' ? 'active' : ''}><a href="/">About</a></li>
+              <li class={currentPath === '/experience' ? 'active' : ''}><a href="/experience">Experience</a></li>
+              <li class={currentPath === '/contact' ? 'active' : ''}><a href="/contact">Contact</a></li>
+              <li class={currentPath.startsWith('/blog') ? 'active' : ''}><a href="/blog">Blog</a></li>
+              <li><a href="https://embracingchangeinspiringgrowth.substack.com" target="_blank" rel="noopener">Newsletter</a></li>
+            </ul>
+          </nav>
+        </div>
+      </header>
+
+      <section id="page" class="clear" role="main">
+        <slot />
+      </section>
+
+      <footer id="footer" class="clear">
+        <nav class="sqs-svg-icon--list" aria-label="Social links">
+          <!-- Email -->
+          <a href="mailto:hello@fernandodelgado.com" class="sqs-svg-icon--wrapper email" aria-label="hello@fernandodelgado.com">
+            <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+              <path d="M57 17H7a3 3 0 0 0-3 3v24a3 3 0 0 0 3 3h50a3 3 0 0 0 3-3V20a3 3 0 0 0-3-3zm-1.5 3L32 35.4 8.5 20h47zM7 44V22.6l24.1 15.8a1.5 1.5 0 0 0 1.8 0L57 22.6V44H7z"/>
+            </svg>
+          </a>
+          <!-- LinkedIn -->
+          <a href="https://www.linkedin.com/in/fernandodelgado" target="_blank" rel="noopener" class="sqs-svg-icon--wrapper linkedin" aria-label="Fernando Delgado on LinkedIn">
+            <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+              <path d="M20.4 9.2C20.4 12 18.2 14 15.4 14S10 12 10 9.2 12.2 4.4 15.4 4.4s5 2.2 5 4.8zM10 20h11v34H10zm17 0h10.5v4.6h.1c1.5-2.7 5-5.4 10.3-5.4C58.1 19.2 60 26 60 34v20H49V36c0-4.2-.1-9.6-6-9.6-5.9 0-6.9 4.6-6.9 9.3V54H27V20z"/>
+            </svg>
+          </a>
+          <!-- Medium -->
+          <a href="https://medium.com/@coachfernando" target="_blank" rel="noopener" class="sqs-svg-icon--wrapper medium" aria-label="Fernando Delgado on Medium">
+            <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+              <path d="M7.8 18.6 3 14.2V13h15.3l11.8 25.9L40.5 13H55v1.2l-4.1 3.9c-.4.3-.5.7-.5 1.1v27.7c0 .4.2.8.5 1.1l4 3.9V53H37.2v-1.1l4.2-4c.4-.4.4-.5.4-1.1V24.2L29.2 53h-2L13.3 24.2v19.3c-.1.8.2 1.5.7 2.1l5.4 6.5V53H4v-1.1l5.4-6.5c.5-.6.7-1.3.6-2.1V19.7c0-.5-.2-1-.6-1.1z"/>
+            </svg>
+          </a>
+        </nav>
+      </footer>
+
+    </div>
+
+    <script>
+      const toggle = document.getElementById('mobileMenuToggle');
+      const mobileNav = document.getElementById('mobileNav');
+      if (toggle && mobileNav) {
+        toggle.addEventListener('click', () => {
+          mobileNav.classList.toggle('open');
+        });
+      }
+    </script>
+  </body>
+</html>

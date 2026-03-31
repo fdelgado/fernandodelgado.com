@@ -3,10 +3,10 @@ title: TuneSpace
 slug: tunespace
 description: A personal music library manager and explorer that combines background data pipelines (YouTube search, yt-dlp, Moises integration, multi-API metadata enrichment) with a visually striking dark-themed frontend for browsing 1,233 songs across 557 artists with instant search, world map visualization, country flags, auto-generated lead sheets, and natural language metadata editing powered by Claude Haiku — with 100% metadata coverage across duration, year, genre, language, and artist country.
 date_started: 2026-03-29
-date_completed: 2026-03-30
-active_hours: 19
-sessions: 5
-total_prompts: 145
+date_completed: 2026-03-31
+active_hours: 25.6
+sessions: 8
+total_prompts: 170
 tech_stack:
   - FastAPI
   - React
@@ -34,10 +34,12 @@ tech_stack:
   - Playwright
   - Ruff
   - Anthropic Claude API (Haiku)
+  - Cloudflare Pages
+  - Render.com
 platform: Web
-lines_of_code: 19267
-files: 142
-commits: 43
+lines_of_code: 20162
+files: 144
+commits: 49
 status: completed
 cover_image: /images/projects/tunespace/cover.png
 screenshots:
@@ -68,7 +70,7 @@ tags:
 
 ## Summary
 
-A full-stack music library manager built entirely with Claude Code across five sessions (~19 active hours), designed to handle a personal collection of 1,233 songs across 557 artists. The system automates song addition (YouTube search, yt-dlp download, Moises upload), enriches metadata from Deezer, MusicBrainz, iTunes, and librosa audio analysis, and renders auto-generated lead sheets with VexFlow. Features include natural language metadata editing powered by Claude Haiku (type "this song is in Spanish and the artist is from Chile" and it figures out the changes), full playlist management with drag-and-drop reordering, an artists gallery with photo uploads and country flag emojis, sidebar navigation by genre/country/language/decade, an interactive Leaflet world map with scroll restoration, play tracking, drag-and-drop album art uploads, and a chord editor with revert capability. A Chrome extension handles library sync, setlist import, and bulk chord extraction running in a background service worker. Metadata coverage is 100% across all fields (duration, year, genre, language, artist country) thanks to a multi-API backfill pipeline and an audit script. 43 commits, 19,200+ lines of code, 145 substantive prompts.
+A full-stack music library manager built entirely with Claude Code across five sessions (~19 active hours), designed to handle a personal collection of 1,233 songs across 557 artists. The system automates song addition (YouTube search, yt-dlp download, Moises upload), enriches metadata from Deezer, MusicBrainz, iTunes, and librosa audio analysis, and renders auto-generated lead sheets with VexFlow. Features include natural language metadata editing powered by Claude Haiku (type "this song is in Spanish and the artist is from Chile" and it figures out the changes), full playlist management with drag-and-drop reordering, an artists gallery with photo uploads and country flag emojis, sidebar navigation by genre/country/language/decade, an interactive Leaflet world map with scroll restoration, play tracking, drag-and-drop album art uploads, and a chord editor with revert capability. A Chrome extension handles library sync, setlist import, and bulk chord extraction running in a background service worker. Metadata coverage is 100% across all fields (duration, year, genre, language, artist country) thanks to a multi-API backfill pipeline and an audit script. 49 commits, 19,500+ lines of code, 155 substantive prompts. Deployed live with password protection via Cloudflare Pages (frontend) + Render (backend + PostgreSQL).
 
 ## Features
 
@@ -76,12 +78,13 @@ A full-stack music library manager built entirely with Claude Code across five s
 - **Instant search**: client-side fuzzy matching across all metadata fields (title, artist, genre, country, language, tags) using Fuse.js with tuned threshold, backed by PostgreSQL pg_trgm indexes
 - **Rich metadata per song**: key, BPM, time signature, energy, danceability, valence (mood), acousticness, album art, genres, languages, artist origin countries, tags
 - **Auto-generated lead sheets**: Moises ML chord extraction → quantized to measures → rendered as interactive sheet music with VexFlow (Ranchers font for chords, Georgia for text) → exportable as PDF
-- **Chord editor**: full-screen modal with beat-level editing grid, chord autocomplete, Tab navigation, measure selection, copy/paste chord groups, and a "Golden" badge system for verified-correct sheets
+- **Chord editor**: full-screen modal with beat-level editing grid, chord autocomplete, Tab navigation, drag-and-drop chord repositioning, right-click context menu (silence rests, colored dot annotations from a 6-color pastel palette, free-text annotations like "bar" or "harmonics at 12th", measure copy/paste with flash feedback, measure deletion), measure selection, copy/paste chord groups, and a "Golden" badge system for verified-correct sheets
 - **Natural language editing**: type instructions like "this song is in Spanish" or "the artist is from Chile" — Claude Haiku interprets them into structured field edits via tool_use, shows a preview diff, and applies changes through existing PATCH endpoints. Works for both songs and artists simultaneously in a single instruction
 - **Metadata editor**: manual save with sticky save bar, autocomplete for genres/languages/tags/key, smart propagation to same-artist songs, full audit trail (accessible via "Switch to manual editor" from the NL editor)
 - **Album art management**: Deezer search, iTunes fallback, manual URL paste, copy from same-artist thumbnails, retry button, drag-and-drop image upload on the entire song modal
 - **Playlists**: full CRUD, drag-to-reorder in sidebar, inline rename, add/remove songs from playlist view and song detail, album art mosaic header, Moises setlist import with "Artist - Title" parsing
 - **Artists gallery**: browsable /artists page with grid/list views, sort by song count or country, country grouping with headers, song count badges over photos
+- **Album pages**: clickable album names navigate to a dedicated page with canonical cover art, artist name(s), year (earliest from songs), and a song list — all filtered client-side from the cached song data
 - **Artist pages**: dedicated route with high-res artist photo (drag-and-drop image upload or URL paste), country editing with autocomplete, full song list
 - **Sidebar navigation by dimension**: collapsible browse-by sections for genres, countries, languages, decades — each with song counts and "show all" expansion. Clicking filters the library via URL params
 - **Interactive world map**: Leaflet with CartoDB dark tiles, clickable circle markers sized by song count, smooth zoom/pan, legend. Clicking a country navigates to the filtered library
@@ -89,6 +92,9 @@ A full-stack music library manager built entirely with Claude Code across five s
 - **Play tracking**: counts clicks to Moises player, visible in list view and artist pages
 - **Advanced filters**: sliders for BPM range, year range, energy, danceability; dropdowns for key, genre, language, country, decade
 - **Grid/list toggle**: album art cards with ambient glow or compact table view, toggle positioned next to sort controls
+- **Auto-scroll lead sheet**: BPM-synchronized auto-scroll with 4-second countdown, continuous smooth scrolling (frame-rate-independent exponential interpolation), progress bar with elapsed time, and automatic stop at song end
+- **Chord annotations**: right-click any beat to add colored dots (6-pastel palette, rendered as superscript in the lead sheet) or free-text annotations (rendered in italic below the chord), with drag-and-drop preserving annotations
+- **Measure timestamps**: each line in both the lead sheet and chord editor shows the song timestamp (mm:ss) for when that measure starts, calculated from BPM
 - **PDF export**: download button on lead sheets using browser print for vector-quality output
 - **Chrome extension**: Sync Library with delta detection, Import Setlists with scan-then-select, Grab Chords from player, Bulk Extract Chords (background service worker — survives popup close and tab switching)
 - **Bulk chord extraction**: background service worker opens each song in a tab, polls for chord data with configurable patience (34s total per song), uses chord_complex_pop for accuracy (preserves m7b5 vs dim)
@@ -97,6 +103,7 @@ A full-stack music library manager built entirely with Claude Code across five s
 - **Chord revert**: chords_previous stored before re-import, "Revert chords" button in song detail, verified (golden) chords never overwritten
 - **Multi-artist handling**: comma-separated artist names split into individual artists, ft./feat. parsed from titles and linked as featured artists, artist counts include all appearances
 - **Unicode normalization**: NFC normalization on all imports prevents decomposed-accent duplicates (e.g., é vs e+combining accent)
+- **Production deployment**: Cloudflare Pages (frontend CDN) + Render.com (backend + PostgreSQL). Password-protected via server-side Bearer token validation — password never baked into the JS bundle. Read-only mode strips Celery/Redis for minimal infrastructure cost (free tier)
 - **Hidden audio features**: energy, danceability, and mood bars hidden from the UI until data quality from librosa extraction improves — fields still stored for future use
 - **Country flag emojis**: shared utility converting country names to ISO 3166-1 alpha-2 codes → Regional Indicator Symbol flag emoji. Shown in world map country table and artist page group headers
 - **Metadata backfill pipeline**: MusicBrainz artist search + ISO subdivision code handling, Deezer/iTunes track lookup, language inference from artist countries. Automated audit script checks all songs for gaps and inconsistencies
@@ -170,6 +177,24 @@ Key requests that drove the build, in order:
 49. **Modal scroll fix** — Reported persistent phantom scroll on the song detail modal after editing
 50. **Drag-and-drop album art** — Requested drag-and-drop image upload on the song modal, matching the existing artist page pattern
 51. **Genre rename** — Asked to rename "Singer-Songwriter" to "Singer Songwriter" across all songs
+52. **Clickable albums** — Requested album names be clickable, linking to a dedicated album page with canonical cover art and list view
+53. **Album year** — Asked to show the album year derived from the earliest song year
+54. **Production deployment** — Requested deploying to Cloudflare Pages + Render with password protection (shared password "tunespace")
+55. **Database migration** — Imported 8.8 MB pg_dump to Render's managed PostgreSQL
+56. **Fix asyncpg dialect** — Render provides `postgresql://`, app needs `postgresql+asyncpg://`
+57. **Fix broken thumbnails** — Locally uploaded artist photos needed to be committed and DB URLs made absolute
+58. **Security hardening** — Removed hardcoded password from JS bundle, validate server-side instead
+59. **Password and localhost** — Changed deployment password to "venezuela", made password gate auto-skip on localhost
+60. **Drag-and-drop chords** — Chords often land one beat off from ML extraction; requested drag-and-drop to reposition them
+61. **Right-click context menu** — Add silence symbol and future actions via right-click on beat cells
+62. **Proper rest rendering** — Silence symbol should render as a VexFlow quarter rest, not a unicode box
+63. **Auto-scroll for live performance** — BPM-aware auto-scroll with countdown, smooth scrolling, progress bar — "ultra smart" so the right line is always centered
+64. **Note spacing and timestamps** — Notes should fill full measure width; add timestamps below measure numbers
+65. **Chord annotations** — Right-click to add colored dots (6-pastel palette) and free-text annotations like "bar" or "harmonics at 12th"
+66. **Save button always visible** — Save button disappeared when no changes; should always be present
+67. **Golden toggle in save flow** — Toggling golden didn't activate the Save button; unified into the save flow
+68. **Measure copy/paste/delete** — Right-click menu actions for copying, pasting, and deleting entire measures with flash feedback
+69. **Chord-to-staff spacing** — Moved chord rendering from VexFlow Annotations to raw SVG for pixel-precise vertical positioning
 
 ## Raw Prompts
 
@@ -260,6 +285,28 @@ Substantive user messages from the conversation, preserving original wording:
 > "allow me to add a song art cover by dragging a photo into the edit modal, just like we do for artist photo. the target should be the entire edit modal"
 
 > "can you rename 'singer-songwriter' to 'Singer Songwriter' with a space?"
+
+> "could we make albums clickable, so that all songs from that album are shown? it's fine in that case to use the canonical ablum cover at the top, and the rest is a list (no grid view)"
+
+> "can you show the year of the album in the album page by grabbing the smallest year from all the songs?"
+
+> "Would you be able to push out a version of this to Cloudflare's infrastructure, and make the experience password-protected? I also want to share the private github repository with a friend"
+
+> "let's make it read-only for now... whatever is free for very little use... single shared password is fine: tunespace"
+
+> "when I edit a lead sheet, it often has the right chord, but one noe after/before where it should go. allow me to drag and drop chords to the previous note easily"
+
+> "i would like to be able to add a silent note easily. can you allow me to add it by right clicking on a editable cell and displaying a menu of special symbols and actions?"
+
+> "next to the pdf/ edit chord buttons, add an auto-scroll button. this button should be ultra smart, so ultrathink. you know the duration of the song, you know the bpm. so if i play this live, you'll know precisely where in the song i should be at any given time."
+
+> "one of the other actions in addicion to adding the silence symbol is i want to be able to annotate a particular chord or note. I may add stuff like 'bar', a colored dot (pick from a nice slightly bright pastel palette of 6 different colors), 'harmonics at 12th' or something like that"
+
+> "if i go into edit mode and mark something as golden, the button still shows in gray state. same as when i undo a golden. can you please make sure this works well?"
+
+> "please add as an action to copy an entire measure, and to paste an entire measure with the right click menu. when doing so, please briefly highlight with a rounded rectangle the measure i just copied, and also highlight it when i paste it"
+
+> "didn't work. can you ultrathink to make sure your fix is correct?" [about chord-to-staff spacing — VexFlow's setYShift had no effect, leading to raw SVG rendering approach]
 
 ## Technical Challenges
 
@@ -357,6 +404,8 @@ A third session added library management refinements: a song archive system with
 
 The fourth session focused on data quality and completeness. The world map was improved to show all countries (not just top 20), with country flag emojis added throughout. A metadata backfill pipeline was built: MusicBrainz for artist countries (172 artists backfilled automatically, with improved ISO subdivision code handling for cases like Jack Johnson whose area is "Hawaii" not "United States"), Deezer and iTunes for song duration/year/genre, and language inference from artist countries. An audit script was written to detect and fill all gaps. After automated backfill, the user manually provided data for the remaining 44 artists and edge-case songs, achieving 100% coverage across all metadata fields for 1,233 songs and 557 artists. A scroll restoration bug was diagnosed using Playwright — the fix required understanding React StrictMode's double-mount behavior, which was clearing the scroll restore timer before it could fire. The project was tagged as `v1.0-24h` to mark the milestone.
 
+The sixth session focused on the live performance workflow. The chord editor gained drag-and-drop chord repositioning (for correcting off-by-one-beat placement from ML extraction), a right-click context menu with silence rests (rendered as proper VexFlow quarter rests), colored dot annotations (6-pastel palette rendered as superscripts in the lead sheet), free-text annotations ("bar", "harmonics at 12th" rendered in italic below chords), measure copy/paste with animated flash feedback, and measure deletion. A BPM-synchronized auto-scroll was added for live performance — with a 4-second countdown, continuous smooth scrolling using frame-rate-independent exponential interpolation, and a progress bar. Measure timestamps were added to both views. The VexFlow chord rendering was eventually moved from VexFlow's built-in Annotation system (which provided no control over vertical positioning) to raw SVG text elements placed at pixel-precise positions relative to `stave.getYForLine(0)`, giving full control over the chord-to-staff spacing. The password gate was made conditional (auto-skipped on localhost), and the deployment password was updated.
+
 The fifth session introduced AI-powered editing. The user proposed using Claude Code CLI headlessly to edit the database directly via natural language — an interesting idea, but the latency (10-30s per edit from process spawn) and security risks (`--dangerously-skip-permissions` with DB access) led to a cleaner architecture: Claude Haiku via the Anthropic API with constrained tool_use. The NL endpoint is interpret-only — it returns a preview diff of proposed changes, and actual mutations go through the existing PATCH endpoints, preserving audit logging, validation, and propagation. After testing, the user noticed artist edits couldn't be made from the song context ("this is Spanish and Dani is from Chile"), so both tools were made available simultaneously — Claude can now return song AND artist edits in a single call. A persistent phantom scroll bug on the song detail modal was traced to the `scale(1.25)` CSS transform on the ambient background inflating `scrollHeight` — confirmed via Playwright tests comparing the old and new structure. The session also added drag-and-drop album art uploads on the entire modal, mirroring the existing artist page pattern.
 
 ### CSS Transform Inflating Scroll Height
@@ -368,6 +417,16 @@ The fifth session introduced AI-powered editing. The user proposed using Claude 
 **Solution:** Split the modal into two layers: an outer container with `overflow: hidden` that clips the scaled background, and an inner container with `overflow-y: auto` that handles content scrolling. The background is rendered but its transform can no longer inflate the scrollable area.
 
 **Debugging approach:** Built a Playwright test with two HTML structures — the old (overflow-y-auto + scale-125 on same element) and new (overflow-hidden wrapper + inner scroll container). The old structure was scrollable by 25px on a short content page; the new structure was not scrollable. Confirmed the root cause is the CSS transform affecting overflow.
+
+### VexFlow Annotation Positioning: Abandoning the Built-in System
+
+**Problem:** Chord symbols above the staff had too much vertical whitespace — roughly 40px of gap between the chord text and the top staff line. The user wanted this reduced by 65%.
+
+**Root cause:** VexFlow's `Annotation` class with `VerticalJustify.TOP` positions chord text at a fixed distance above the stave, determined by internal font metrics and stave padding. The `setYShift()` modifier, which should offset the annotation vertically, had no visible effect — likely overridden by VexFlow's internal layout calculations during the draw phase. Multiple attempts with shifts from 25 to 45 pixels produced identical output.
+
+**Solution:** Removed VexFlow's Annotation system entirely. Chord symbols are now rendered as raw SVG `<text>` elements in a post-processing step, positioned at `stave.getYForLine(0) - 22px` — exactly 22 pixels above the top staff line. This gives pixel-precise control over spacing. Colored dots and text annotations are positioned relative to the chord text's `getBBox()`, and the flat/sharp kerning fix still processes the Ranchers-font text elements since they share the same font-family attribute.
+
+**Debugging approach:** Iterative visual testing with increasing `setYShift` values (25, 45) confirmed the modifier had no effect. Switched to measuring exact stave line positions via `stave.getYForLine(0)` and rendering chord text as manually-placed SVG elements, verifying against the user's screenshots at each step.
 
 ### NL Editing: CLI vs API Architecture Decision
 
@@ -391,7 +450,8 @@ Key technical decisions:
 - **librosa for audio features** — Spotify deprecated their audio features endpoint. Built local extraction: RMS energy, onset strength, beat regularity, chroma profiles → normalized to 0-1 energy, danceability, valence, acousticness scores.
 - **Chrome extension with cross-frame scripting** — No Moises library API exists. The extension scrapes the DOM for library data and uses `allFrames: true` with Performance API to intercept chord data from the player's cross-origin iframe.
 - **VexFlow for lead sheets** — JavaScript music notation library that renders in-browser. Chord symbols over rhythm slashes, measure numbers, bar lines. Print-friendly white background per Tufte-inspired UX guidelines.
-- **JSONB for chord data** — Flexible schema for chord progressions. Supports the chord editor's beat-level editing and the "Golden" verification badge system.
+- **JSONB for chord data** — Flexible schema for chord progressions with optional `annotation` and `dot` fields per beat. Supports the chord editor's beat-level editing, colored annotations, and the "Golden" verification badge system.
+- **Raw SVG over VexFlow Annotations** — VexFlow's built-in Annotation system provided no reliable control over vertical positioning (setYShift was ignored). Chord symbols are rendered as raw SVG text elements at `stave.getYForLine(0) - 22px`, with colored dots and text annotations positioned via getBBox(). This gives pixel-precise layout control while still benefiting from VexFlow's staff line and note rendering.
 - **Optimistic UI for the Golden toggle** — Immediate visual feedback on the chord editor's verification button, with server-side persistence and rollback on error. Prevents the lag that frustrated the user in the initial implementation.
 - **Leaflet + CartoDB dark tiles over Google Maps** — User wanted Google Maps but didn't want to pay. Leaflet with CartoDB dark_all tiles is 100% free, no API key needed, and matches the dark glassmorphism theme. Still has smooth zoom/pan and clickable markers.
 - **URL-param-driven sidebar navigation** — Clicking "Rock" in the sidebar navigates to `/?genre=Rock`. The Library page reads search params on mount and applies them as filters. Simple, shareable, and bookmarkable — no complex state management needed.
@@ -401,3 +461,4 @@ Key technical decisions:
 - **Bulk chord extraction via background tabs** — The Chrome extension opens songs in inactive tabs (`active: false`), avoiding focus stealing. 8-second wait per song accounts for Moises's lazy chord loading. Fully resumable via the `pending-chords` endpoint that only returns songs still missing chord data.
 - **NL editing via Claude Haiku with constrained tool_use** — Natural language metadata editing uses the Anthropic API with forced tool_use to constrain output to valid field edits (enum of allowed fields, typed values). The interpret endpoint is read-only — it returns a preview diff; actual mutations go through existing PATCH endpoints preserving audit logging and propagation. Both song and artist tools are provided simultaneously so a single instruction can edit both entities. Cost: ~700 input tokens + ~100 output tokens per edit at Haiku pricing.
 - **Separated overflow containers for scaled backgrounds** — CSS transforms on positioned elements inflate `scrollHeight`. The song modal uses `overflow: hidden` on the outer container (clips the `scale(1.25)` ambient background) and `overflow-y: auto` on the inner container (handles content scrolling). Never put `overflow-y: auto` on the same element as a scaled absolute child.
+- **Split deployment: Cloudflare Pages + Render** — Frontend SPA on Cloudflare's CDN (free, fast, global), backend API + PostgreSQL on Render (free tier with sleep after 15 min). Password validated server-side via Bearer token middleware — the frontend PasswordGate hits the API to verify, never stores or bundles the password in client code. Render's `DATABASE_URL` uses `postgresql://` but SQLAlchemy needs `postgresql+asyncpg://` — a Pydantic model_validator auto-converts on startup.

@@ -4,9 +4,9 @@ slug: tunespace
 description: A personal music library manager and explorer that combines background data pipelines (YouTube search, yt-dlp, Moises integration, multi-API metadata enrichment) with a visually striking dark-themed frontend for browsing 1,233 songs across 557 artists with instant search, world map visualization, country flags, auto-generated lead sheets, and natural language metadata editing powered by Claude Haiku — with 100% metadata coverage across duration, year, genre, language, and artist country.
 date_started: 2026-03-29
 date_completed: 2026-03-31
-active_hours: 25.6
-sessions: 8
-total_prompts: 170
+active_hours: 36.6
+sessions: 10
+total_prompts: 180
 tech_stack:
   - FastAPI
   - React
@@ -29,7 +29,7 @@ tech_stack:
   - YouTube Data API
   - Music AI API (Moises)
   - librosa
-  - Leaflet
+  - Google Maps API
   - Vitest
   - Playwright
   - Ruff
@@ -37,9 +37,9 @@ tech_stack:
   - Cloudflare Pages
   - Render.com
 platform: Web
-lines_of_code: 20162
-files: 144
-commits: 49
+lines_of_code: 22241
+files: 153
+commits: 58
 status: completed
 cover_image: /images/projects/tunespace/cover.png
 screenshots:
@@ -52,7 +52,7 @@ screenshots:
   - path: /images/projects/tunespace/song-detail.png
     alt: Song detail modal with album art editor and audio feature bars
   - path: /images/projects/tunespace/world-map.png
-    alt: Interactive Leaflet world map with dark CartoDB tiles and clickable country markers
+    alt: Interactive Google Maps world map with dark theme and clickable bubble markers sized by song count
   - path: /images/projects/tunespace/artist-page.png
     alt: Artist detail page with high-res photo, country badges, and full song list
   - path: /images/projects/tunespace/sidebar-browse.png
@@ -70,7 +70,7 @@ tags:
 
 ## Summary
 
-A full-stack music library manager built entirely with Claude Code across five sessions (~19 active hours), designed to handle a personal collection of 1,233 songs across 557 artists. The system automates song addition (YouTube search, yt-dlp download, Moises upload), enriches metadata from Deezer, MusicBrainz, iTunes, and librosa audio analysis, and renders auto-generated lead sheets with VexFlow. Features include natural language metadata editing powered by Claude Haiku (type "this song is in Spanish and the artist is from Chile" and it figures out the changes), full playlist management with drag-and-drop reordering, an artists gallery with photo uploads and country flag emojis, sidebar navigation by genre/country/language/decade, an interactive Leaflet world map with scroll restoration, play tracking, drag-and-drop album art uploads, and a chord editor with revert capability. A Chrome extension handles library sync, setlist import, and bulk chord extraction running in a background service worker. Metadata coverage is 100% across all fields (duration, year, genre, language, artist country) thanks to a multi-API backfill pipeline and an audit script. 49 commits, 19,500+ lines of code, 155 substantive prompts. Deployed live with password protection via Cloudflare Pages (frontend) + Render (backend + PostgreSQL).
+A full-stack music library manager built entirely with Claude Code across ten sessions (~37 active hours), designed to handle a personal collection of 1,233 songs across 557 artists. The system automates song addition (YouTube search, yt-dlp download, Moises upload), enriches metadata from Deezer, MusicBrainz, iTunes, and librosa audio analysis, and renders auto-generated lead sheets with VexFlow. Features include natural language metadata editing powered by Claude Haiku, full playlist management with drag-and-drop reordering, an artists gallery with multi-source photo search and BiRefNet background removal, sidebar navigation by genre/country/language/decade, an interactive Google Maps world map with dark theme, play tracking, drag-and-drop album art uploads, a random mix generator with filter-aware multi-key selection, and a chord editor with drag-and-drop repositioning, annotations, and auto-scroll for live performance. A Chrome extension handles library sync, setlist import, and bulk chord extraction running in a background service worker. Metadata coverage is 100% across all fields thanks to a multi-API backfill pipeline. 58 commits, 22,200+ lines of code, 180 substantive prompts. Deployed live via Cloudflare Pages (frontend) + Render (backend + PostgreSQL).
 
 ## Features
 
@@ -83,12 +83,13 @@ A full-stack music library manager built entirely with Claude Code across five s
 - **Metadata editor**: manual save with sticky save bar, autocomplete for genres/languages/tags/key, smart propagation to same-artist songs, full audit trail (accessible via "Switch to manual editor" from the NL editor)
 - **Album art management**: Deezer search, iTunes fallback, manual URL paste, copy from same-artist thumbnails, retry button, drag-and-drop image upload on the entire song modal
 - **Playlists**: full CRUD, drag-to-reorder in sidebar, inline rename, add/remove songs from playlist view and song detail, album art mosaic header, Moises setlist import with "Artist - Title" parsing
-- **Artists gallery**: browsable /artists page with grid/list views, sort by song count or country, country grouping with headers, song count badges over photos
+- **Artists gallery**: browsable /artists page with grid/list views, sort by song count or country, country grouping with headers, song count badges over photos, scroll-to-top button
+- **Artist photo management**: dedicated /artists/photos page for bulk photo management — search online across 6 free sources (TheAudioDB, Wikimedia Commons, Deezer, Spotify, Wikipedia, Wikidata), paste URL, batch background removal with BiRefNet (birefnet-general, birefnet-portrait, birefnet-massive) and white-bg compositing
 - **Album pages**: clickable album names navigate to a dedicated page with canonical cover art, artist name(s), year (earliest from songs), and a song list — all filtered client-side from the cached song data
 - **Artist pages**: dedicated route with high-res artist photo (drag-and-drop image upload or URL paste), country editing with autocomplete, full song list
 - **Sidebar navigation by dimension**: collapsible browse-by sections for genres, countries, languages, decades — each with song counts and "show all" expansion. Clicking filters the library via URL params
-- **Interactive world map**: Leaflet with CartoDB dark tiles, clickable circle markers sized by song count, smooth zoom/pan, legend. Clicking a country navigates to the filtered library
-- **Random mix with filters**: genre, language, country, decade dropdowns with server-side filtering for the random playlist generator
+- **Interactive world map**: Google Maps API with custom dark theme (region labels only), clickable bubble markers sized by song count, hover tooltips, legend. Clicking a country navigates to the filtered library
+- **Random mix with filters**: genre, language, country, decade dropdowns plus collapsible multi-key selection (toggle pills, select/deselect all) with server-side filtering for the random playlist generator
 - **Play tracking**: counts clicks to Moises player, visible in list view and artist pages
 - **Advanced filters**: sliders for BPM range, year range, energy, danceability; dropdowns for key, genre, language, country, decade
 - **Grid/list toggle**: album art cards with ambient glow or compact table view, toggle positioned next to sort controls
@@ -195,6 +196,16 @@ Key requests that drove the build, in order:
 67. **Golden toggle in save flow** — Toggling golden didn't activate the Save button; unified into the save flow
 68. **Measure copy/paste/delete** — Right-click menu actions for copying, pasting, and deleting entire measures with flash feedback
 69. **Chord-to-staff spacing** — Moved chord rendering from VexFlow Annotations to raw SVG for pixel-precise vertical positioning
+70. **Artist photo search** — Build multi-source image search (TheAudioDB, Wikimedia, Deezer, Spotify, Wikipedia, Wikidata) for artist photos
+71. **Background removal** — BiRefNet-powered background removal for artist photos, with white-bg compositing and batch processing
+72. **Artist photo page** — Dedicated /artists/photos page for bulk photo management with search, paste URL, batch background removal
+73. **Memory optimization** — Background removal using 28GB RAM; reduced to ~300MB by switching from in-process to subprocess execution
+74. **Random mix keys** — Multi-key selection filter with toggle pills and select/deselect all for the random playlist generator
+75. **Scroll-to-top on artists** — Artists page should have the same scroll-to-top button as the Library
+76. **Collapsible keys panel** — Make keys a collapsible panel in random mix, collapsed by default
+77. **Google Maps migration** — Replace Leaflet with Google Maps API for the world map, with dark theme and region-only labels
+78. **Map label contrast** — Make country labels brighter against the dark map background
+79. **Deploy to Cloudflare** — Push all changes to Cloudflare Pages and the online instance
 
 ## Raw Prompts
 
@@ -308,6 +319,18 @@ Substantive user messages from the conversation, preserving original wording:
 
 > "didn't work. can you ultrathink to make sure your fix is correct?" [about chord-to-staff spacing — VexFlow's setYShift had no effect, leading to raw SVG rendering approach]
 
+> "artist page should have the scroll to top button similar to library"
+
+> "can you make keys a collapsible panel in the random mix page, and make it collapsed by default?"
+
+> "can we try out google maps api instead of what we have right now?"
+
+> "Can you make the map dark, and with fewer label details - i care mostly about regions"
+
+> "can you make the contrast of the map a bit higher by making the labels brighter?"
+
+> "can we push all of these changes to cloudflare and the online instance we have?"
+
 ## Technical Challenges
 
 ### Spotify Rate Limit Lockout → Full API Pivot
@@ -390,19 +413,33 @@ Substantive user messages from the conversation, preserving original wording:
 
 **Debugging approach:** Built a Playwright test script that automated the full flow: navigate to /map, scroll down, click a country, press back, measure scrollY. The first run confirmed the bug (expected 532, got 0). Instrumentation revealed `window.scrollTo(0, 532)` worked fine when called manually 2 seconds later — proving it was purely a timing issue. Tracing the StrictMode mount/unmount cycle revealed the root cause.
 
-### react-leaflet v5 / React 18 Incompatibility
+### Google Maps Migration: mapId vs styles Conflict
 
-**Problem:** The Map page crashed on load with a cryptic "render2 is not a function" error, despite the map having worked previously.
+**Problem:** After replacing Leaflet with Google Maps API (@vis.gl/react-google-maps), the dark map styles weren't applying — the map rendered in Google's default light theme despite having a comprehensive `DARK_MAP_STYLES` array.
 
-**Root cause:** react-leaflet@5.0.0 was installed (likely auto-upgraded during a dependency update), but it requires React 19. The v5 package uses React 19's updated Context API internally, which is incompatible with React 18's reconciler. The error surfaced inside `MapContainerComponent` where the library tries to call React rendering functions that don't exist in v18.
+**Root cause:** The `Map` component was configured with both a `mapId` prop (required for `AdvancedMarker`) and a `styles` prop. When `mapId` is present, Google Maps ignores the `styles` prop entirely — styling must be done through Cloud Console's Map Styles instead. The `mapId` was originally added because `AdvancedMarker` (which supports custom HTML content) requires it.
 
-**Solution:** Downgraded to react-leaflet@4.2.1 and @react-leaflet/core@2.1.0, which are the last versions supporting React 18. Also had to kill stale Vite dev server processes that were serving the cached v5 bundle, and cleared the `.vite` cache directory to ensure the downgraded packages were picked up.
+**Solution:** Removed the `mapId` prop so the inline `styles` array would apply. Replaced `AdvancedMarker` with the basic `Marker` component using dynamically-generated SVG data URIs for the bubble icons (creating circles of varying sizes at runtime). Hover tooltips switched from custom HTML overlays to Google Maps `InfoWindow` components. The dark style was refined to show only country labels (hiding provinces, cities, roads, water labels, POIs) with progressively brighter label colors for better contrast.
 
-**Debugging approach:** Traced the error through the React DevTools stack trace to `MapContainerComponent`. Checked react-leaflet's `package.json` peerDependencies, which confirmed v5 requires `react@^19.0.0`. Identified that stale Vite processes were still serving the old cached bundle even after the downgrade, requiring process cleanup and cache clearing.
+**Debugging approach:** Compared the rendered map against the expected dark theme. Checked Google Maps documentation which confirmed that `mapId` takes precedence over `styles`. Tested removing `mapId` and verified the dark theme applied immediately.
+
+### BiRefNet Background Removal: 28GB Memory → 300MB
+
+**Problem:** Artist photo background removal was consuming 28GB of RAM, making the process impractical on a development machine.
+
+**Root cause:** The BiRefNet model (state-of-the-art segmentation for hair, fine edges, and group photos) was being loaded in-process by the FastAPI backend. Each invocation loaded the full model weights into memory, and Python's garbage collector wasn't releasing them promptly due to CUDA/MPS tensor references.
+
+**Solution:** Moved background removal to subprocess execution — the FastAPI endpoint spawns a separate Python process that loads the model, processes the image, and exits (freeing all memory). Added model variant selection (birefnet-general, birefnet-portrait, birefnet-massive) and alpha matting with edge feathering via Gaussian blur on alpha channel edges only. Processed images are composited onto a white background.
+
+**Debugging approach:** Monitored memory usage with Activity Monitor during processing. Identified that model weights persisted after inference. Tested subprocess approach and confirmed memory dropped from 28GB peak to ~300MB.
 
 A third session added library management refinements: a song archive system with soft-delete and restore, a playlist selector UI for Moises setlist import (scan available playlists, show checkboxes, import selected), hiding unreliable audio feature bars from the UI, multi-genre support per song, and a crown icon color fix in the lead sheet viewer. The session also hit a react-leaflet v5/React 18 incompatibility that crashed the map page — resolved by downgrading to react-leaflet 4.2.1 and clearing Vite's module cache.
 
 The fourth session focused on data quality and completeness. The world map was improved to show all countries (not just top 20), with country flag emojis added throughout. A metadata backfill pipeline was built: MusicBrainz for artist countries (172 artists backfilled automatically, with improved ISO subdivision code handling for cases like Jack Johnson whose area is "Hawaii" not "United States"), Deezer and iTunes for song duration/year/genre, and language inference from artist countries. An audit script was written to detect and fill all gaps. After automated backfill, the user manually provided data for the remaining 44 artists and edge-case songs, achieving 100% coverage across all metadata fields for 1,233 songs and 557 artists. A scroll restoration bug was diagnosed using Playwright — the fix required understanding React StrictMode's double-mount behavior, which was clearing the scroll restore timer before it could fire. The project was tagged as `v1.0-24h` to mark the milestone.
+
+The seventh and eighth sessions added artist photo infrastructure: a multi-source image search aggregating 6 free APIs (TheAudioDB, Wikimedia Commons, Deezer, Spotify client_credentials, Wikipedia en+es, Wikidata), a dedicated /artists/photos page for bulk management, and BiRefNet-powered background removal that was initially consuming 28GB of RAM — fixed by moving to subprocess execution, dropping to ~300MB. The random mix generator gained multi-key selection with toggle pills.
+
+The ninth and tenth sessions focused on UI refinements and a major map migration: scroll-to-top buttons on the artists page, collapsible key panels in random mix, and replacing Leaflet with Google Maps API. The Google Maps migration required resolving a conflict between `mapId` (needed for AdvancedMarker) and inline `styles` (needed for the dark theme), ultimately switching to basic Marker components with SVG data URI icons. The dark theme was tuned to show only country labels with enough contrast against the dark background.
 
 The sixth session focused on the live performance workflow. The chord editor gained drag-and-drop chord repositioning (for correcting off-by-one-beat placement from ML extraction), a right-click context menu with silence rests (rendered as proper VexFlow quarter rests), colored dot annotations (6-pastel palette rendered as superscripts in the lead sheet), free-text annotations ("bar", "harmonics at 12th" rendered in italic below chords), measure copy/paste with animated flash feedback, and measure deletion. A BPM-synchronized auto-scroll was added for live performance — with a 4-second countdown, continuous smooth scrolling using frame-rate-independent exponential interpolation, and a progress bar. Measure timestamps were added to both views. The VexFlow chord rendering was eventually moved from VexFlow's built-in Annotation system (which provided no control over vertical positioning) to raw SVG text elements placed at pixel-precise positions relative to `stave.getYForLine(0)`, giving full control over the chord-to-staff spacing. The password gate was made conditional (auto-skipped on localhost), and the deployment password was updated.
 

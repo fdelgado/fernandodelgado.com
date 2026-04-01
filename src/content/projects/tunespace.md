@@ -38,9 +38,9 @@ tech_stack:
   - Cloudflare Pages
   - Render.com
 platform: Web
-lines_of_code: 22462
-files: 154
-commits: 61
+lines_of_code: 22912
+files: 156
+commits: 62
 status: completed
 cover_image: /images/projects/tunespace/cover.png
 screenshots:
@@ -95,7 +95,8 @@ A full-stack music library manager built entirely with Claude Code across ten se
 - **Play tracking**: counts clicks to Moises player, visible in list view and artist pages
 - **Advanced filters**: sliders for BPM range, year range, energy, danceability; dropdowns for key, genre, language, country, decade
 - **Grid/list toggle**: album art cards with ambient glow or compact table view, toggle positioned next to sort controls
-- **Auto-scroll lead sheet**: BPM-synchronized auto-scroll with 4-second countdown, continuous smooth scrolling (frame-rate-independent exponential interpolation), progress bar with elapsed time, and automatic stop at song end
+- **Auto-scroll lead sheet**: BPM-synchronized auto-scroll with beat-based countdown (configurable 1-8 beats), gradient tracking dot with trail animation that follows playback position beat-by-beat using VexFlow note coordinates, spacebar pause/resume, bottom-left elapsed timer, progress bar, crossfade line transitions, trail fades on pause
+- **Golden Set playlist**: auto-populated virtual playlist of all verified lead sheets, ordered by verification date, draggable position in sidebar persisted via localStorage
 - **Chord annotations**: right-click any beat to add colored dots (6-pastel palette, rendered as superscript in the lead sheet) or free-text annotations (rendered in italic below the chord), with drag-and-drop preserving annotations
 - **Measure timestamps**: each line in both the lead sheet and chord editor shows the song timestamp (mm:ss) for when that measure starts, calculated from BPM
 - **PDF export**: download button on lead sheets using browser print for vector-quality output

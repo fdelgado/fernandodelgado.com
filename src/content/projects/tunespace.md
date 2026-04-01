@@ -3,10 +3,10 @@ title: TuneSpace
 slug: tunespace
 description: A personal music library manager and explorer that combines background data pipelines (YouTube search, yt-dlp, Moises integration, multi-API metadata enrichment) with a visually striking dark-themed frontend for browsing 1,233 songs across 557 artists with instant search, world map visualization, country flags, auto-generated lead sheets, and natural language metadata editing powered by Claude Haiku — with 100% metadata coverage across duration, year, genre, language, and artist country.
 date_started: 2026-03-29
-date_completed: 2026-03-31
-active_hours: 36.6
-sessions: 10
-total_prompts: 180
+date_completed: 2026-04-01
+active_hours: 38.6
+sessions: 11
+total_prompts: 200
 tech_stack:
   - FastAPI
   - React
@@ -37,9 +37,9 @@ tech_stack:
   - Cloudflare Pages
   - Render.com
 platform: Web
-lines_of_code: 22241
-files: 153
-commits: 58
+lines_of_code: 22462
+files: 154
+commits: 60
 status: completed
 cover_image: /images/projects/tunespace/cover.png
 screenshots:
@@ -70,7 +70,7 @@ tags:
 
 ## Summary
 
-A full-stack music library manager built entirely with Claude Code across ten sessions (~37 active hours), designed to handle a personal collection of 1,233 songs across 557 artists. The system automates song addition (YouTube search, yt-dlp download, Moises upload), enriches metadata from Deezer, MusicBrainz, iTunes, and librosa audio analysis, and renders auto-generated lead sheets with VexFlow. Features include natural language metadata editing powered by Claude Haiku, full playlist management with drag-and-drop reordering, an artists gallery with multi-source photo search and BiRefNet background removal, sidebar navigation by genre/country/language/decade, an interactive Google Maps world map with dark theme, play tracking, drag-and-drop album art uploads, a random mix generator with filter-aware multi-key selection, and a chord editor with drag-and-drop repositioning, annotations, and auto-scroll for live performance. A Chrome extension handles library sync, setlist import, and bulk chord extraction running in a background service worker. Metadata coverage is 100% across all fields thanks to a multi-API backfill pipeline. 58 commits, 22,200+ lines of code, 180 substantive prompts. Deployed live via Cloudflare Pages (frontend) + Render (backend + PostgreSQL).
+A full-stack music library manager built entirely with Claude Code across ten sessions (~37 active hours), designed to handle a personal collection of 1,233 songs across 557 artists. The system automates song addition (YouTube search, yt-dlp download, Moises upload), enriches metadata from Deezer, MusicBrainz, iTunes, and librosa audio analysis, and renders auto-generated lead sheets with VexFlow. Features include natural language metadata editing powered by Claude Haiku, full playlist management with drag-and-drop reordering, an artists gallery with multi-source photo search and BiRefNet background removal, sidebar navigation by genre/country/language/decade, an interactive Google Maps world map with dark theme, play tracking, drag-and-drop album art uploads, a random mix generator with filter-aware multi-key selection, and a chord editor with drag-and-drop repositioning, annotations, and auto-scroll for live performance. A Chrome extension handles library sync, setlist import, and bulk chord extraction running in a background service worker. Metadata coverage is 100% across all fields thanks to a multi-API backfill pipeline. 60 commits, 22,400+ lines of code, 200+ substantive prompts. Deployed live via Cloudflare Pages (frontend) + Render (backend + PostgreSQL).
 
 ## Features
 
@@ -81,7 +81,8 @@ A full-stack music library manager built entirely with Claude Code across ten se
 - **Chord editor**: full-screen modal with beat-level editing grid, chord autocomplete, Tab navigation, drag-and-drop chord repositioning, right-click context menu (silence rests, colored dot annotations from a 6-color pastel palette, free-text annotations like "bar" or "harmonics at 12th", measure copy/paste with flash feedback, measure deletion), measure selection, copy/paste chord groups, and a "Golden" badge system for verified-correct sheets
 - **Natural language editing**: type instructions like "this song is in Spanish" or "the artist is from Chile" — Claude Haiku interprets them into structured field edits via tool_use, shows a preview diff, and applies changes through existing PATCH endpoints. Works for both songs and artists simultaneously in a single instruction
 - **Metadata editor**: manual save with sticky save bar, autocomplete for genres/languages/tags/key, smart propagation to same-artist songs, full audit trail (accessible via "Switch to manual editor" from the NL editor)
-- **Album art management**: Deezer search, iTunes fallback, manual URL paste, copy from same-artist thumbnails, retry button, drag-and-drop image upload on the entire song modal
+- **3D card flip animation**: hovering the album art in the song detail modal flips it in 3D to reveal artist photos with spring physics (stiffness/damping/mass), specular shine at 90° (edge-on), and scale pulse. Multi-artist songs cycle every 3 seconds with continuous flips, swapping hidden face content mid-rotation. Armed gate prevents flip on modal open when cursor is already over the art
+- **Album art management**: Deezer search, iTunes fallback, manual URL paste, copy from same-artist thumbnails, retry button, drag-and-drop image upload on the entire song modal — editing gated behind edit mode button
 - **Playlists**: full CRUD, drag-to-reorder in sidebar, inline rename, add/remove songs from playlist view and song detail, album art mosaic header, Moises setlist import with "Artist - Title" parsing
 - **Artists gallery**: browsable /artists page with grid/list views, sort by song count or country, country grouping with headers, song count badges over photos, scroll-to-top button
 - **Artist photo management**: dedicated /artists/photos page for bulk photo management — search online across 6 free sources (TheAudioDB, Wikimedia Commons, Deezer, Spotify, Wikipedia, Wikidata), paste URL, batch background removal with BiRefNet (birefnet-general, birefnet-portrait, birefnet-massive) and white-bg compositing
@@ -433,6 +434,16 @@ Substantive user messages from the conversation, preserving original wording:
 
 **Debugging approach:** Monitored memory usage with Activity Monitor during processing. Identified that model weights persisted after inference. Tested subprocess approach and confirmed memory dropped from 28GB peak to ~300MB.
 
+### Silent Auto-Trigger: Background Removal Respawning at 32GB
+
+**Problem:** After the initial BiRefNet memory fix (above), the 32GB Python process kept reappearing in Activity Monitor. Killing it via `kill` only worked temporarily — it respawned within minutes, consuming 32GB again. The user wasn't explicitly running any background removal.
+
+**Root cause:** Both artist photo upload endpoints (`POST /{artist_id}/image` and `POST /{artist_id}/photo-from-url`) included a `background_tasks.add_task(_process_single, ...)` call that silently auto-triggered background removal after every photo upload. FastAPI's `BackgroundTasks` ran this after the HTTP response was sent, so the user never saw it happen. The background task imported `rembg`, loaded the BiRefNet ONNX model into memory, and ONNX Runtime spawned a multiprocessing subprocess (visible as a `multiprocessing.spawn` child of the uvicorn process) that inflated to 32GB. Because the ONNX session was cached in a module-level dict (`_current_session`), the memory was never released — and any subsequent photo upload would re-trigger the entire chain if the subprocess had been killed.
+
+**Solution:** Removed the auto-trigger from both upload endpoints. Background removal is now strictly opt-in — users must explicitly click "Remove Background" in the UI or use the batch removal endpoint. The upload endpoints simply save the photo and return, with no side effects.
+
+**Debugging approach:** Used `ps aux -p <PID>` to identify the process as a `multiprocessing.spawn` child, then `ps -o ppid=` to trace it back to the uvicorn parent (not Celery, as initially suspected). Grepped the codebase for `background_tasks.add_task` in the artist API routes, which revealed the two auto-trigger call sites. The fix was a two-line deletion — but finding it required understanding the full chain: FastAPI BackgroundTasks → lazy import of `background_removal` → `rembg.new_session()` → ONNX Runtime → multiprocessing subprocess.
+
 A third session added library management refinements: a song archive system with soft-delete and restore, a playlist selector UI for Moises setlist import (scan available playlists, show checkboxes, import selected), hiding unreliable audio feature bars from the UI, multi-genre support per song, and a crown icon color fix in the lead sheet viewer. The session also hit a react-leaflet v5/React 18 incompatibility that crashed the map page — resolved by downgrading to react-leaflet 4.2.1 and clearing Vite's module cache.
 
 The fourth session focused on data quality and completeness. The world map was improved to show all countries (not just top 20), with country flag emojis added throughout. A metadata backfill pipeline was built: MusicBrainz for artist countries (172 artists backfilled automatically, with improved ISO subdivision code handling for cases like Jack Johnson whose area is "Hawaii" not "United States"), Deezer and iTunes for song duration/year/genre, and language inference from artist countries. An audit script was written to detect and fill all gaps. After automated backfill, the user manually provided data for the remaining 44 artists and edge-case songs, achieving 100% coverage across all metadata fields for 1,233 songs and 557 artists. A scroll restoration bug was diagnosed using Playwright — the fix required understanding React StrictMode's double-mount behavior, which was clearing the scroll restore timer before it could fire. The project was tagged as `v1.0-24h` to mark the milestone.
@@ -440,6 +451,8 @@ The fourth session focused on data quality and completeness. The world map was i
 The seventh and eighth sessions added artist photo infrastructure: a multi-source image search aggregating 6 free APIs (TheAudioDB, Wikimedia Commons, Deezer, Spotify client_credentials, Wikipedia en+es, Wikidata), a dedicated /artists/photos page for bulk management, and BiRefNet-powered background removal that was initially consuming 28GB of RAM — fixed by moving to subprocess execution, dropping to ~300MB. The random mix generator gained multi-key selection with toggle pills.
 
 The ninth and tenth sessions focused on UI refinements and a major map migration: scroll-to-top buttons on the artists page, collapsible key panels in random mix, and replacing Leaflet with Google Maps API. The Google Maps migration required resolving a conflict between `mapId` (needed for AdvancedMarker) and inline `styles` (needed for the dark theme), ultimately switching to basic Marker components with SVG data URI icons. The dark theme was tuned to show only country labels with enough contrast against the dark background.
+
+The eleventh session focused on deployment, mobile responsiveness, and data quality. The frontend was deployed to Cloudflare Pages with `VITE_API_URL` pointed at the Render backend — the first deploy failed because the API base URL defaulted to `/api` (relative), sending requests to the Cloudflare domain instead of Render; the second failed because it was set to `https://tunespace-api.onrender.com` without the `/api` prefix, resulting in 404s. A mobile hamburger menu was refined with a close (X) button inside the sidebar, body scroll lock, and conditional hamburger visibility. A top progress bar was added using React Query's `useIsFetching` hook — it trickles from 0% to 90% during data loading and snaps to 100% on completion, using the project's accent gradient colors. A critical memory leak was debugged: a 32GB Python process kept respawning because both artist photo upload endpoints silently auto-triggered BiRefNet background removal via FastAPI's `BackgroundTasks` — traced via `ps aux` → parent PID → grep for `background_tasks.add_task`, fixed by making background removal opt-in only. Data quality fixes included merging duplicate artists (Timø/Timo via Unicode variation), correcting artist countries (Pablo Lacadiere: Jamaica → Mexico, verified via web search), and splitting combined artists ("Shakira & Papatinho" into separate Shakira and Papatinho entries with proper song linkage). The playlist page's artist marquee was polished: bottom spacing tightened to match side margins, artist thumbnails made right-clickable via `<a>` tags (supporting "Open in new tab"), and hover name tooltips repositioned as gradient overlays inside the image bounds to avoid `overflow-hidden` clipping.
 
 The sixth session focused on the live performance workflow. The chord editor gained drag-and-drop chord repositioning (for correcting off-by-one-beat placement from ML extraction), a right-click context menu with silence rests (rendered as proper VexFlow quarter rests), colored dot annotations (6-pastel palette rendered as superscripts in the lead sheet), free-text annotations ("bar", "harmonics at 12th" rendered in italic below chords), measure copy/paste with animated flash feedback, and measure deletion. A BPM-synchronized auto-scroll was added for live performance — with a 4-second countdown, continuous smooth scrolling using frame-rate-independent exponential interpolation, and a progress bar. Measure timestamps were added to both views. The VexFlow chord rendering was eventually moved from VexFlow's built-in Annotation system (which provided no control over vertical positioning) to raw SVG text elements placed at pixel-precise positions relative to `stave.getYForLine(0)`, giving full control over the chord-to-staff spacing. The password gate was made conditional (auto-skipped on localhost), and the deployment password was updated.
 

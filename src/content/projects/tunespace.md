@@ -20,6 +20,7 @@ tech_stack:
   - VexFlow
   - Framer Motion
   - Fuse.js
+  - Outfit (Google Fonts)
   - Docker
   - Chrome Extension (Manifest V3)
   - yt-dlp
@@ -39,7 +40,7 @@ tech_stack:
 platform: Web
 lines_of_code: 22462
 files: 154
-commits: 60
+commits: 61
 status: completed
 cover_image: /images/projects/tunespace/cover.png
 screenshots:

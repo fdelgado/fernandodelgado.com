@@ -38,9 +38,9 @@ tech_stack:
   - Cloudflare Pages
   - Render.com
 platform: Web
-lines_of_code: 22912
-files: 156
-commits: 62
+lines_of_code: 23400
+files: 160
+commits: 64
 status: completed
 cover_image: /images/projects/tunespace/cover.png
 screenshots:
@@ -77,6 +77,9 @@ A full-stack music library manager built entirely with Claude Code across ten se
 
 - **Song addition pipeline**: search YouTube by text, download via yt-dlp, upload to Moises, enrich metadata — all in Celery background workers
 - **Instant search**: client-side fuzzy matching across all metadata fields (title, artist, genre, country, language, tags) using Fuse.js with tuned threshold, backed by PostgreSQL pg_trgm indexes
+- **Chord progression search**: find songs by chord sequence (e.g., Am → F → C → G). Precomputed chord_sequence column with GIN trigram index for fast substring matching. Pill-based input with autocomplete, preset progressions (I–V–vi–IV, ii–V–I), 1,232 songs indexed
+- **Code splitting**: React.lazy + Suspense for all 12 page routes — initial bundle reduced from 1.5MB to 361KB (76% reduction)
+- **Keyboard shortcuts**: / to focus search, Escape to close modals, Space to pause/resume auto-scroll
 - **Rich metadata per song**: key, BPM, time signature, energy, danceability, valence (mood), acousticness, album art, genres, languages, artist origin countries, tags
 - **Auto-generated lead sheets**: Moises ML chord extraction → quantized to measures → rendered as interactive sheet music with VexFlow (Ranchers font for chords, Georgia for text) → exportable as PDF
 - **Chord editor**: full-screen modal with beat-level editing grid, chord autocomplete, Tab navigation, drag-and-drop chord repositioning, right-click context menu (silence rests, colored dot annotations from a 6-color pastel palette, free-text annotations like "bar" or "harmonics at 12th", measure copy/paste with flash feedback, measure deletion), measure selection, copy/paste chord groups, and a "Golden" badge system for verified-correct sheets

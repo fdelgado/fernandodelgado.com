@@ -3,10 +3,10 @@ title: TuneSpace
 slug: tunespace
 description: A personal music library manager and explorer that combines background data pipelines (YouTube search, yt-dlp, Moises integration, multi-API metadata enrichment) with a visually striking dark-themed frontend for browsing 1,233 songs across 557 artists with instant search, world map visualization, country flags, auto-generated lead sheets, and natural language metadata editing powered by Claude Haiku — with 100% metadata coverage across duration, year, genre, language, and artist country.
 date_started: 2026-03-29
-date_completed: 2026-04-01
-active_hours: 38.6
-sessions: 11
-total_prompts: 200
+date_completed: 2026-04-03
+active_hours: 40.1
+sessions: 12
+total_prompts: 208
 tech_stack:
   - FastAPI
   - React
@@ -35,12 +35,14 @@ tech_stack:
   - Playwright
   - Ruff
   - Anthropic Claude API (Haiku)
+  - svguitar
+  - "@tombatossals/chords-db"
   - Cloudflare Pages
   - Render.com
 platform: Web
-lines_of_code: 23400
-files: 160
-commits: 64
+lines_of_code: 24974
+files: 187
+commits: 69
 status: completed
 cover_image: /images/projects/tunespace/cover.png
 screenshots:
@@ -71,7 +73,7 @@ tags:
 
 ## Summary
 
-A full-stack music library manager built entirely with Claude Code across ten sessions (~37 active hours), designed to handle a personal collection of 1,233 songs across 557 artists. The system automates song addition (YouTube search, yt-dlp download, Moises upload), enriches metadata from Deezer, MusicBrainz, iTunes, and librosa audio analysis, and renders auto-generated lead sheets with VexFlow. Features include natural language metadata editing powered by Claude Haiku, full playlist management with drag-and-drop reordering, an artists gallery with multi-source photo search and BiRefNet background removal, sidebar navigation by genre/country/language/decade, an interactive Google Maps world map with dark theme, play tracking, drag-and-drop album art uploads, a random mix generator with filter-aware multi-key selection, and a chord editor with drag-and-drop repositioning, annotations, and auto-scroll for live performance. A Chrome extension handles library sync, setlist import, and bulk chord extraction running in a background service worker. Metadata coverage is 100% across all fields thanks to a multi-API backfill pipeline. 60 commits, 22,400+ lines of code, 200+ substantive prompts. Deployed live via Cloudflare Pages (frontend) + Render (backend + PostgreSQL).
+A full-stack music library manager built entirely with Claude Code across ten sessions (~37 active hours), designed to handle a personal collection of 1,233 songs across 557 artists. The system automates song addition (YouTube search, yt-dlp download, Moises upload), enriches metadata from Deezer, MusicBrainz, iTunes, and librosa audio analysis, and renders auto-generated lead sheets with VexFlow. Features include natural language metadata editing powered by Claude Haiku, full playlist management with drag-and-drop reordering, an artists gallery with multi-source photo search and BiRefNet background removal, sidebar navigation by genre/country/language/decade, an interactive Google Maps world map with dark theme, play tracking, drag-and-drop album art uploads, a random mix generator with filter-aware multi-key selection, and a chord editor with drag-and-drop repositioning, annotations, and auto-scroll for live performance. A Chrome extension handles library sync, setlist import, and bulk chord extraction running in a background service worker. Metadata coverage is 100% across all fields thanks to a multi-API backfill pipeline. 69 commits, 25,000+ lines of code, 200+ substantive prompts. Deployed live via Cloudflare Pages (frontend) + Render (backend + PostgreSQL).
 
 ## Features
 
@@ -102,6 +104,7 @@ A full-stack music library manager built entirely with Claude Code across ten se
 - **Golden Set playlist**: auto-populated virtual playlist of all verified lead sheets, ordered by verification date, draggable position in sidebar persisted via localStorage
 - **Chord annotations**: right-click any beat to add colored dots (6-pastel palette, rendered as superscript in the lead sheet) or free-text annotations (rendered in italic below the chord), with drag-and-drop preserving annotations
 - **Measure timestamps**: each line in both the lead sheet and chord editor shows the song timestamp (mm:ss) for when that measure starts, calculated from BPM
+- **Guitar chord diagrams**: interactive SVG fretboard diagrams on lead sheets using svguitar + @tombatossals/chords-db (2,069 voicings across 756 chord types). Edit mode shows toggleable chord pills, left/right voicing cycling, and side-by-side variation comparison. Chord name parser handles Unicode ♭/♯, slash chords, and all common notations. Selections persist in the chords JSONB and render above the staff
 - **PDF export**: download button on lead sheets using browser print for vector-quality output
 - **Chrome extension**: Sync Library with delta detection, Import Setlists with scan-then-select, Grab Chords from player, Bulk Extract Chords (background service worker — survives popup close and tab switching)
 - **Bulk chord extraction**: background service worker opens each song in a tab, polls for chord data with configurable patience (34s total per song), uses chord_complex_pop for accuracy (preserves m7b5 vs dim)
@@ -212,6 +215,12 @@ Key requests that drove the build, in order:
 77. **Google Maps migration** — Replace Leaflet with Google Maps API for the world map, with dark theme and region-only labels
 78. **Map label contrast** — Make country labels brighter against the dark map background
 79. **Deploy to Cloudflare** — Push all changes to Cloudflare Pages and the online instance
+80. **Guitar chord diagrams** — Requested fretboard diagrams on lead sheets with X/O string indicators, voicing selector in edit mode, and variation cycling
+81. **Chord diagram positioning** — Moved selector below Lead Sheet Notes, not above everything
+82. **Unicode flat in chord parser** — D#m7♭5 wasn't recognized; parser needed to normalize ♭/♯ to ASCII
+83. **Accidental kerning fix** — Flat/sharp spacing too wide in chord names; kerning logic was running before chord text was rendered
+84. **Kerning tuning** — Adjusted kerning multipliers from 0.75/0.70 → 0.60/0.45 after two iterations (too tight, then just right)
+85. **Fix garbled keys** — "Daj" displayed in key field; fixed 27 rows in both local and production DB
 
 ## Raw Prompts
 
@@ -337,6 +346,16 @@ Substantive user messages from the conversation, preserving original wording:
 
 > "can we push all of these changes to cloudflare and the online instance we have?"
 
+> "i need a nice new feature: i want the lead sheet to be able to show me the guitar chord diagrams (with the fretboard), similar to this...the X's and O's should show at the top...when I enter edit mode, I should be able to see a simple chord selection box that allows me to pick which chords I need diagrams for. by default, none is selected. once I pick a chord i want a diagram for, i should have a way to choose which of the variations i prefer - so there must be a way to cycle through them"
+
+> "on this song, how can i pick for you to show me D#m7♭5? the list of chords I can select should be taken from the actual list of chords, and should be shown below the lead sheet notes box"
+
+> "why does this song show 'Daj' in the key?"
+
+> "the spacing between the 7 the b and the 5 should be much narrower. I thought we had fixed/addressed this in the past"
+
+> "can you make them 0.6/0.45?"
+
 ## Technical Challenges
 
 ### Spotify Rate Limit Lockout → Full API Pivot
@@ -457,6 +476,8 @@ The seventh and eighth sessions added artist photo infrastructure: a multi-sourc
 
 The ninth and tenth sessions focused on UI refinements and a major map migration: scroll-to-top buttons on the artists page, collapsible key panels in random mix, and replacing Leaflet with Google Maps API. The Google Maps migration required resolving a conflict between `mapId` (needed for AdvancedMarker) and inline `styles` (needed for the dark theme), ultimately switching to basic Marker components with SVG data URI icons. The dark theme was tuned to show only country labels with enough contrast against the dark background.
 
+The twelfth session added guitar chord diagrams to lead sheets — SVG fretboard renderings with X/O indicators, finger numbers, barre arcs, and fret labels using svguitar + @tombatossals/chords-db (2,069 voicings across 756 chord types). A chord name parser was built to handle Unicode ♭/♯ normalization and slash chords. The edit mode gained a diagram selector with toggleable chord pills and voicing variation cycling. A pre-existing ♭/♯ kerning bug was discovered — the fix ran before chord text existed in the SVG — and garbled key values ("Daj" instead of "D") were traced to truncated Moises API output and fixed across 27 rows in both local and production databases.
+
 The eleventh session focused on deployment, mobile responsiveness, and data quality. The frontend was deployed to Cloudflare Pages with `VITE_API_URL` pointed at the Render backend — the first deploy failed because the API base URL defaulted to `/api` (relative), sending requests to the Cloudflare domain instead of Render; the second failed because it was set to `https://tunespace-api.onrender.com` without the `/api` prefix, resulting in 404s. A mobile hamburger menu was refined with a close (X) button inside the sidebar, body scroll lock, and conditional hamburger visibility. A top progress bar was added using React Query's `useIsFetching` hook — it trickles from 0% to 90% during data loading and snaps to 100% on completion, using the project's accent gradient colors. A critical memory leak was debugged: a 32GB Python process kept respawning because both artist photo upload endpoints silently auto-triggered BiRefNet background removal via FastAPI's `BackgroundTasks` — traced via `ps aux` → parent PID → grep for `background_tasks.add_task`, fixed by making background removal opt-in only. Data quality fixes included merging duplicate artists (Timø/Timo via Unicode variation), correcting artist countries (Pablo Lacadiere: Jamaica → Mexico, verified via web search), and splitting combined artists ("Shakira & Papatinho" into separate Shakira and Papatinho entries with proper song linkage). The playlist page's artist marquee was polished: bottom spacing tightened to match side margins, artist thumbnails made right-clickable via `<a>` tags (supporting "Open in new tab"), and hover name tooltips repositioned as gradient overlays inside the image bounds to avoid `overflow-hidden` clipping.
 
 The sixth session focused on the live performance workflow. The chord editor gained drag-and-drop chord repositioning (for correcting off-by-one-beat placement from ML extraction), a right-click context menu with silence rests (rendered as proper VexFlow quarter rests), colored dot annotations (6-pastel palette rendered as superscripts in the lead sheet), free-text annotations ("bar", "harmonics at 12th" rendered in italic below chords), measure copy/paste with animated flash feedback, and measure deletion. A BPM-synchronized auto-scroll was added for live performance — with a 4-second countdown, continuous smooth scrolling using frame-rate-independent exponential interpolation, and a progress bar. Measure timestamps were added to both views. The VexFlow chord rendering was eventually moved from VexFlow's built-in Annotation system (which provided no control over vertical positioning) to raw SVG text elements placed at pixel-precise positions relative to `stave.getYForLine(0)`, giving full control over the chord-to-staff spacing. The password gate was made conditional (auto-skipped on localhost), and the deployment password was updated.
@@ -482,6 +503,16 @@ The fifth session introduced AI-powered editing. The user proposed using Claude 
 **Solution:** Removed VexFlow's Annotation system entirely. Chord symbols are now rendered as raw SVG `<text>` elements in a post-processing step, positioned at `stave.getYForLine(0) - 22px` — exactly 22 pixels above the top staff line. This gives pixel-precise control over spacing. Colored dots and text annotations are positioned relative to the chord text's `getBBox()`, and the flat/sharp kerning fix still processes the Ranchers-font text elements since they share the same font-family attribute.
 
 **Debugging approach:** Iterative visual testing with increasing `setYShift` values (25, 45) confirmed the modifier had no effect. Switched to measuring exact stave line positions via `stave.getYForLine(0)` and rendering chord text as manually-placed SVG elements, verifying against the user's screenshots at each step.
+
+### Accidental Kerning: Execution Order Bug
+
+**Problem:** Chord names with ♭/♯ symbols (like `C#m7♭5`) had excessive spacing on the lead sheet — the flat symbol was much wider than surrounding characters, making the chord name look broken.
+
+**Root cause:** A kerning fix already existed in the codebase — it measured the width difference between the ♭ glyph and "b" in the Ranchers font, then applied negative `dx` attributes on SVG `<tspan>` elements to tighten spacing. However, this fix ran via `svgEl.querySelectorAll("text")` *before* the chord text elements were created and appended to the SVG. The fix was processing VexFlow's internal text elements (which don't use Ranchers font) and missing all the chord symbols entirely.
+
+**Solution:** Moved the kerning fix to execute *after* all chord symbols, colored dots, and text annotations are appended to the SVG. The `querySelectorAll("text")` now captures all text elements including the dynamically-added chord names. Kerning multipliers were tuned iteratively (0.75/0.70 → 0.40/0.35 → 0.60/0.45) based on visual feedback.
+
+**Debugging approach:** The user reported the spacing was broken despite a fix existing. Reading the render function revealed the execution order: kerning fix at line 533, chord text creation at line 572. The fix simply couldn't process elements that didn't exist yet. A second issue emerged: chord names containing the Unicode ♭ (U+266D) symbol weren't matching in the chord database — the parser only normalized accidentals in the root note position, not throughout the suffix. Adding a `normalizeAccidentals()` pass before suffix matching resolved both `D#m7♭5` and `D#m7b5` to the same chord.
 
 ### NL Editing: CLI vs API Architecture Decision
 
@@ -516,4 +547,5 @@ Key technical decisions:
 - **Bulk chord extraction via background tabs** — The Chrome extension opens songs in inactive tabs (`active: false`), avoiding focus stealing. 8-second wait per song accounts for Moises's lazy chord loading. Fully resumable via the `pending-chords` endpoint that only returns songs still missing chord data.
 - **NL editing via Claude Haiku with constrained tool_use** — Natural language metadata editing uses the Anthropic API with forced tool_use to constrain output to valid field edits (enum of allowed fields, typed values). The interpret endpoint is read-only — it returns a preview diff; actual mutations go through existing PATCH endpoints preserving audit logging and propagation. Both song and artist tools are provided simultaneously so a single instruction can edit both entities. Cost: ~700 input tokens + ~100 output tokens per edit at Haiku pricing.
 - **Separated overflow containers for scaled backgrounds** — CSS transforms on positioned elements inflate `scrollHeight`. The song modal uses `overflow: hidden` on the outer container (clips the `scale(1.25)` ambient background) and `overflow-y: auto` on the inner container (handles content scrolling). Never put `overflow-y: auto` on the same element as a scaled absolute child.
+- **svguitar + chords-db for guitar diagrams** — svguitar renders pure SVG chord diagrams (no React 19 dependency, unlike svguitar-react), while @tombatossals/chords-db provides 2,069 voicings across 756 chord types with finger positions, fret numbers, and barre data. A custom chord name parser normalizes Unicode ♭/♯ to ASCII and handles slash chords, mapping to chords-db's key+suffix format. Both libraries are code-split into separate lazy-loaded chunks (237KB + 162KB) to avoid bloating the main bundle.
 - **Split deployment: Cloudflare Pages + Render** — Frontend SPA on Cloudflare's CDN (free, fast, global), backend API + PostgreSQL on Render (free tier with sleep after 15 min). Password validated server-side via Bearer token middleware — the frontend PasswordGate hits the API to verify, never stores or bundles the password in client code. Render's `DATABASE_URL` uses `postgresql://` but SQLAlchemy needs `postgresql+asyncpg://` — a Pydantic model_validator auto-converts on startup.

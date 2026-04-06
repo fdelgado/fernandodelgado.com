@@ -10,6 +10,7 @@ interface Props {
 const { title, description = 'Fernando Delgado — Product Executive | 5x Founder | Ex-Google, YouTube, Yahoo', bodyClass = '' } = Astro.props;
 const GA_ID = 'G-BFKDHKEV28';
 const currentPath = Astro.url.pathname;
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 ---
 
 <!doctype html>
@@ -20,6 +21,8 @@ const currentPath = Astro.url.pathname;
     <meta name="description" content={description} />
     <title>{title}</title>
     <link rel="icon" type="image/png" href="/favicon.ico" />
+    <link rel="canonical" href={canonicalURL.href} />
+    <link rel="sitemap" href="/sitemap-index.xml" />
 
     <!-- Google Analytics -->
     <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}></script>

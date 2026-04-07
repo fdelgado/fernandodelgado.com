@@ -44,6 +44,7 @@ lines_of_code: 24974
 files: 187
 commits: 69
 status: completed
+hidden: false
 cover_image: /images/projects/tunespace/cover.png
 screenshots:
   - path: /images/projects/tunespace/library-view.png

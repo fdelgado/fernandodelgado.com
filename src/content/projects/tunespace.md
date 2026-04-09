@@ -1,9 +1,9 @@
 ---
 title: TuneSpace
 slug: tunespace
-description: A personal music library manager and explorer that combines background data pipelines (YouTube search, yt-dlp, Moises integration, multi-API metadata enrichment) with a visually striking dark-themed frontend for browsing 1,233 songs across 557 artists with instant search, world map visualization, country flags, auto-generated lead sheets, and natural language metadata editing powered by Claude Haiku — with 100% metadata coverage across duration, year, genre, language, and artist country.
+description: A personal music library manager and explorer that combines background data pipelines (YouTube search, yt-dlp, Moises integration, multi-API metadata enrichment) with a visually striking dark-themed frontend for browsing 1,236 songs across 568 artists with instant search, world map visualization, country flags, auto-generated lead sheets, and natural language metadata editing powered by Claude Haiku — with 100% metadata coverage across duration, year, genre, language, and artist country.
 date_started: 2026-03-29
-date_completed: 2026-04-03
+date_completed: 2026-04-09
 active_hours: 40.1
 sessions: 12
 total_prompts: 208
@@ -19,7 +19,7 @@ tech_stack:
   - Alembic
   - VexFlow
   - Framer Motion
-  - Fuse.js
+  - Neon (PostgreSQL hosting)
   - Outfit (Google Fonts)
   - Docker
   - Chrome Extension (Manifest V3)
@@ -40,9 +40,9 @@ tech_stack:
   - Cloudflare Pages
   - Render.com
 platform: Web
-lines_of_code: 24974
-files: 187
-commits: 69
+lines_of_code: 26246
+files: 168
+commits: 91
 status: completed
 hidden: false
 cover_image: /images/projects/tunespace/cover.png
@@ -525,6 +525,16 @@ The fifth session introduced AI-powered editing. The user proposed using Claude 
 
 **Debugging approach:** After the initial implementation with one tool per entity type, testing revealed that combined instructions ("this is Spanish and the artist is from Chile") couldn't edit both song and artist. The fix: provide both tools simultaneously with `tool_choice: "any"`, then dispatch based on `tool_use.name` in the response. A subtle mock issue emerged in tests — `MagicMock().name` returns the mock's internal name, not an attribute, so tool name matching silently failed. Switched to `SimpleNamespace` for tool_use mocks.
 
+### Render to Neon Database Migration: Triple Connection Failure
+
+**Problem:** Render announced free PostgreSQL tier suspension (2026-04-29). Needed to migrate 1,236 songs and 568 artists to a new provider without downtime. Chose Neon for its free tier with scale-to-zero (no keepalive cron needed).
+
+**Root cause:** Three separate connection issues emerged. First, the initial Neon project was created in eu-west-2 (London), which timed out from the US. Second, after recreating in us-west-2, connections still failed because Neon's default connection string includes `channel_binding=require`, which causes psql and asyncpg to hang silently (no error, just timeout). Third, after data migration succeeded, the Neon pooler endpoint had an empty `search_path`, so all queries returned "relation does not exist" despite the data being present.
+
+**Solution:** Used the direct endpoint (not pooler) for all connections. Built URL parameter stripping in `db.py` to remove `sslmode=require` and `channel_binding=require` before passing to asyncpg, while separately configuring SSL via `ssl.create_default_context()` in `connect_args`. Verified data integrity by comparing row counts across all tables (songs, artists, playlists, golden chords, archived) between local and Neon.
+
+**Debugging approach:** Used `nc -z` to confirm raw TCP connectivity worked (ruling out firewall), then isolated `channel_binding=require` as the hanging parameter by testing with and without it. Discovered the pooler `search_path` issue by running `SHOW search_path` on both endpoints. Tested the full SQLAlchemy+asyncpg stack locally against Neon before deploying.
+
 ## Architecture
 
 Key technical decisions:
@@ -532,7 +542,7 @@ Key technical decisions:
 - **FastAPI over Flask** — Async-native for background task coordination, auto-generated OpenAPI docs, Pydantic validation. The user's background is Flask but the async requirements (multiple concurrent API enrichments, non-blocking downloads) favor FastAPI.
 - **PostgreSQL with pg_trgm** — Enables fuzzy search with `%` operator across a GIN-indexed `search_text` column. Combined with `unaccent` extension for accent-insensitive matching (critical for Spanish-language music: "Maria" matches "maria").
 - **Celery + Redis over simple BackgroundTasks** — Persistent task queue survives server restarts. Fan-out pattern for metadata enrichment: one song triggers parallel Deezer, MusicBrainz, and chord extraction tasks. Redis doubles as cache layer.
-- **Client-side search with Fuse.js** — For instant perceived performance (<100ms). All songs loaded in memory on the frontend with tuned fuzzy matching (threshold 0.2, minMatchCharLength 3). Server-side pg_trgm search serves as fallback.
+- **Server-side search with pg_trgm** — Library search moved fully server-side using PostgreSQL's pg_trgm extension with GIN indexes on a composite `search_text` column. Fuse.js was removed after the library grew past 10K songs, where client-side search caused noticeable lag.
 - **Deezer + iTunes over Spotify** — After a 23-hour Spotify rate limit lockout, pivoted entirely. Deezer needs no API key and has generous limits. iTunes as fallback for remaining album art gaps.
 - **librosa for audio features** — Spotify deprecated their audio features endpoint. Built local extraction: RMS energy, onset strength, beat regularity, chroma profiles → normalized to 0-1 energy, danceability, valence, acousticness scores.
 - **Chrome extension with cross-frame scripting** — No Moises library API exists. The extension scrapes the DOM for library data and uses `allFrames: true` with Performance API to intercept chord data from the player's cross-origin iframe.
@@ -549,4 +559,4 @@ Key technical decisions:
 - **NL editing via Claude Haiku with constrained tool_use** — Natural language metadata editing uses the Anthropic API with forced tool_use to constrain output to valid field edits (enum of allowed fields, typed values). The interpret endpoint is read-only — it returns a preview diff; actual mutations go through existing PATCH endpoints preserving audit logging and propagation. Both song and artist tools are provided simultaneously so a single instruction can edit both entities. Cost: ~700 input tokens + ~100 output tokens per edit at Haiku pricing.
 - **Separated overflow containers for scaled backgrounds** — CSS transforms on positioned elements inflate `scrollHeight`. The song modal uses `overflow: hidden` on the outer container (clips the `scale(1.25)` ambient background) and `overflow-y: auto` on the inner container (handles content scrolling). Never put `overflow-y: auto` on the same element as a scaled absolute child.
 - **svguitar + chords-db for guitar diagrams** — svguitar renders pure SVG chord diagrams (no React 19 dependency, unlike svguitar-react), while @tombatossals/chords-db provides 2,069 voicings across 756 chord types with finger positions, fret numbers, and barre data. A custom chord name parser normalizes Unicode ♭/♯ to ASCII and handles slash chords, mapping to chords-db's key+suffix format. Both libraries are code-split into separate lazy-loaded chunks (237KB + 162KB) to avoid bloating the main bundle.
-- **Split deployment: Cloudflare Pages + Render** — Frontend SPA on Cloudflare's CDN (free, fast, global), backend API + PostgreSQL on Render (free tier with sleep after 15 min). Password validated server-side via Bearer token middleware — the frontend PasswordGate hits the API to verify, never stores or bundles the password in client code. Render's `DATABASE_URL` uses `postgresql://` but SQLAlchemy needs `postgresql+asyncpg://` — a Pydantic model_validator auto-converts on startup.
+- **Split deployment: Cloudflare Pages + Render + Neon** — Frontend SPA on Cloudflare's CDN (free, fast, global), backend API on Render (free tier), PostgreSQL on Neon (free tier, us-west-2, scale-to-zero). Migrated from Render Postgres after free tier suspension notice. Neon required SSL handling via `connect_args` (asyncpg doesn't understand `sslmode` URL params) and using the direct endpoint over the pooler (which has an empty `search_path`). Combined cold start: Render spin-up (~5-8s) + Neon wake (~1-2s) on first request after inactivity. Password validated server-side via Bearer token middleware.

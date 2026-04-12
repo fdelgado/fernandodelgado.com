@@ -3,10 +3,10 @@ title: TuneSpace
 slug: tunespace
 description: A personal music library manager and explorer that combines background data pipelines (YouTube search, yt-dlp, Moises integration, multi-API metadata enrichment) with a visually striking dark-themed frontend for browsing 1,236 songs across 568 artists with instant search, world map visualization, country flags, auto-generated lead sheets, and natural language metadata editing powered by Claude Haiku — with 100% metadata coverage across duration, year, genre, language, and artist country.
 date_started: 2026-03-29
-date_completed: 2026-04-09
-active_hours: 40.1
-sessions: 12
-total_prompts: 208
+date_completed: 2026-04-12
+active_hours: 44.1
+sessions: 13
+total_prompts: 230
 tech_stack:
   - FastAPI
   - React
@@ -40,9 +40,9 @@ tech_stack:
   - Cloudflare Pages
   - Render.com
 platform: Web
-lines_of_code: 26577
-files: 193
-commits: 93
+lines_of_code: 27253
+files: 200
+commits: 104
 status: completed
 hidden: false
 cover_image: /images/projects/tunespace/cover.png
@@ -107,8 +107,12 @@ A full-stack music library manager built entirely with Claude Code across ten se
 - **Measure timestamps**: each line in both the lead sheet and chord editor shows the song timestamp (mm:ss) for when that measure starts, calculated from BPM
 - **Guitar chord diagrams**: interactive SVG fretboard diagrams on lead sheets using svguitar + @tombatossals/chords-db (2,069 voicings across 756 chord types). Edit mode shows toggleable chord pills, left/right voicing cycling, and side-by-side variation comparison. Chord name parser handles Unicode ♭/♯, slash chords, and all common notations. Selections persist in the chords JSONB and render above the staff
 - **PDF export**: download button on lead sheets using browser print for vector-quality output
-- **Chrome extension**: Sync Library with delta detection, Import Setlists with scan-then-select, Grab Chords from player, Bulk Extract Chords (background service worker — survives popup close and tab switching)
-- **Bulk chord extraction**: background service worker opens each song in a tab, polls for chord data with configurable patience (34s total per song), uses chord_complex_pop for accuracy (preserves m7b5 vs dim)
+- **Chrome extension**: Sync Library with delta detection, Import Setlists with full sync (replaces playlist contents, corrects past mismatches), Grab Chords from player, Bulk Re-Extract All Data (background service worker, survives popup close)
+- **Bulk re-extraction**: background service worker opens each Moises player tab and captures 4 JSON data types (chords with bass notes, beat timing, word-level lyrics, section segments) plus audio stems for priority playlist songs. Priority songs (from selected playlists) are processed first with full stem downloads. ~15s per JSON-only song, ~45s per song with stems. Resumable (re-running skips completed songs)
+- **Slash chord support**: Moises bass note field captured during import. When bass differs from chord root, produces slash chords (Eb/G, Ab/C). Bass notes normalized alongside chord roots using key-aware diatonic rules
+- **Lyrics extraction**: word-level timestamped lyrics from Moises stored as raw JSONB (with confidence scores, line IDs, start/end times) and parsed into plain text for display and search
+- **Section detection**: Moises segment labels (Verse, Chorus, Bridge, Intro, Outro) with timestamps stored for lead sheet section annotation
+- **Fuzzy setlist matching**: setlist import uses accent-insensitive, conjunction-normalized (y/and/&) matching with multi-artist splitting (comma, ft., feat., x). Resolves "Jesse & Joy" to "Jesse y Joy", "Monsieur Perine" to "Monsieur Perine", handles comma-separated multi-artist strings. Never matches by title alone (prevents wrong-artist matches for duplicate titles like "Home" by 3 different artists)
 - **Deduplication**: fuzzy matching on title + artist to prevent duplicate imports
 - **Song archive system**: soft-delete songs to an archive page with one-click restore, keeping the library clean without losing data
 - **Chord revert**: chords_previous stored before re-import, "Revert chords" button in song detail, verified (golden) chords never overwritten
@@ -547,6 +551,26 @@ The fifth session introduced AI-powered editing. The user proposed using Claude 
 
 **Debugging approach:** Queried the database for song 671 and compared `Song.key` ("Db") against `chords.key` ("C#") and individual chord names. Traced the data flow from Moises raw output through `convert_moises_chords()` (no normalization) to `_normalize_moises_key()` (key-only normalization). After the first fix was rejected as musically incorrect, built unit tests covering all key types: Db major (pure flats), E major (4 sharps with borrowed Bb staying flat), G major (only F# converted, Bb/Eb/Ab stay flat), and C major (no changes). Verified with dry-run mode before applying the migration.
 
+### Hidden Bass Notes: Network Sniffer Reveals Moises Data
+
+**Problem:** The Moises iPad app showed slash chords (Eb/G) for "Contigo Yo Estare Bien" by Pablo Lacadiere, but the TuneSpace lead sheet only showed "Eb". The web version of Moises also displayed just "Eb". The assumption was that bass note data wasn't available from the web player.
+
+**Root cause:** Built a network sniffer into the Chrome extension that captured ALL Moises-related network traffic via Performance API across all frames, then fetched and inspected every JSON resource. The sniffer revealed that the web player's chords.json includes a `bass` field in every beat entry. Most entries are `null`, but some have values like "G", "C", "G#". The data was always there, just ignored. The sniffer also discovered 3 additional JSON files per song that were never captured: word-level timestamped lyrics (LYRICS_B), section segments with labels like Verse/Chorus/Bridge (SEGMENTATION_C), and beat timing data (BEATSCHORDS_A/beats.json). Plus 6 audio stem m4a files (vocals, drums, bass, acoustic, electric, other) from the SEPARATE_B operation.
+
+**Solution:** Built a bulk re-extraction system that captures all 4 JSON data types plus audio stems. The Chrome extension's bulk extractor was rewritten to scan Performance API entries for URL patterns matching each operation type (BEATSCHORDS_A, LYRICS_B, SEGMENTATION_C, SEPARATE_B), fetch all JSON files in parallel from within the authenticated page context, and send stem URLs to the backend for server-side download. Priority playlist songs get stem downloads (~20-25 MB per song). 6 new database columns store the raw data (moises_raw, moises_lyrics, moises_segments, moises_beats, moises_stems, lyrics). The system processes ~1,200 songs: 92 priority songs with stems first, then 1,134 remaining songs with JSON only.
+
+**Debugging approach:** Built a "Sniff Moises Network" button into the extension that dumped all Moises-related network resources grouped by domain, then fetched and inspected every JSON file, logging field names, sample entries, and specifically flagging whether any `bass` field had non-null values. The output revealed `BASS VALUES FOUND: G, C, G#` in the chords.json, proving the data existed. The sniffer also revealed the full Moises data architecture: 4 JSON endpoints across 4 CDN domains (d1/d2/d3/api.moises.ai), each for a different analysis operation, plus audio stems via a waves-generator service.
+
+### Setlist Sync: Title-Only Matching Grabs Wrong Artist
+
+**Problem:** The "Fer & Maqui" playlist in TuneSpace had "Home" by Phillip Phillips, but the corresponding Moises setlist had "Home" by Daughtry. The user reported similar mismatches for other songs with common titles.
+
+**Root cause:** The setlist import had a title-only fallback match that fired when exact artist+title matching failed. For "Home", `select(Song).where(lower(Song.title) == 'home').limit(1)` returned whichever "Home" was inserted first (Phillip Phillips), ignoring that the Moises setlist specified Daughtry. Three songs in the library were called "Home" (Daughtry, Michael Buble, Phillip Phillips). The import was also add-only, never removing songs that were no longer in the Moises setlist or correcting past mismatches.
+
+**Solution:** Replaced the title-only fallback with a two-step fuzzy matcher: first narrows candidates by title (case/accent insensitive via `unaccent(lower())`), then disambiguates by fuzzy artist matching in Python. The artist matcher normalizes conjunctions (& to y, "and" to y), strips accents via NFD decomposition, splits multi-artist strings on comma/ft./feat./x separators, and checks bidirectional substring containment ("chino" matches "chino y nacho"). Also rewrote the setlist import from add-only to full sync: resolves all songs, replaces the playlist contents entirely, removes songs no longer in the Moises setlist, corrects past mismatches, and updates ordering.
+
+**Debugging approach:** Queried the database for all songs with duplicate titles (`GROUP BY lower(title) HAVING COUNT(DISTINCT artist) > 1`) and found 25+ titles shared across multiple artists. Inspected the Fer & Maqui playlist to confirm Phillip Phillips' "Home" was linked instead of Daughtry's. Traced the import code to identify the title-only fallback as the root cause. Built normalization helpers with test cases: "Jesse & Joy" normalizes to "jesse y joy" matching "Jesse y Joy", "Monsieur Perine" matches accent variants, "Reik feat. Ozuna, Wisin" splits to three searchable names.
+
 ## Architecture
 
 Key technical decisions:
@@ -567,7 +591,9 @@ Key technical decisions:
 - **Server-side facets endpoint** — `GET /songs/facets` uses PostgreSQL `unnest()` + `GROUP BY` to aggregate genres, languages, decades, and countries with song counts. Runs once and is cached for 5 minutes. Avoids computing facets client-side from 10K songs on every sidebar render.
 - **Auto-save with debounced mutation** — Non-propagatable fields auto-save after 1.5s of inactivity. Propagatable fields (genres, languages, tags) still require explicit confirmation via the propagation dialog. "Cancel & Revert" stores original values and sends a revert mutation on exit.
 - **Multi-API metadata backfill with audit script** — MusicBrainz for artist countries (with ISO 3166-2 subdivision code fallback for areas like "Hawaii" → "United States"), Deezer for duration/year/genre, iTunes as fallback, language inferred from artist country. An audit script runs all checks and fills gaps in a single pass, achieving 100% metadata coverage.
-- **Bulk chord extraction via background tabs** — The Chrome extension opens songs in inactive tabs (`active: false`), avoiding focus stealing. 8-second wait per song accounts for Moises's lazy chord loading. Fully resumable via the `pending-chords` endpoint that only returns songs still missing chord data.
+- **Bulk re-extraction via background tabs** — The Chrome extension opens songs in inactive tabs (`active: false`), scans Performance API entries across all frames for 4 JSON data types (chords, beats, lyrics, segments) plus stem URLs. Priority playlist songs get stem m4a downloads (server-side via httpx). Resumable via `pending-reextract` endpoint that tracks completion by `moises_raw IS NULL`.
+- **Raw Moises data preservation** — All 17 fields from Moises chord data (including bass, nashville notation, basic/simple/complex variants, prev_chord) stored in `moises_raw` JSONB. Golden songs get raw data stored without overwriting verified chords. Enables future re-processing without re-fetching.
+- **Fuzzy setlist sync** — Setlist import does a full playlist sync (not add-only). Songs resolved by moises_id first, then fuzzy title+artist matching using Python-side normalization: NFD accent stripping, conjunction normalization (& to y, "and" to y), multi-artist splitting on comma/ft./feat./x, and bidirectional substring containment. Prevents wrong-artist matches for duplicate titles.
 - **NL editing via Claude Haiku with constrained tool_use** — Natural language metadata editing uses the Anthropic API with forced tool_use to constrain output to valid field edits (enum of allowed fields, typed values). The interpret endpoint is read-only — it returns a preview diff; actual mutations go through existing PATCH endpoints preserving audit logging and propagation. Both song and artist tools are provided simultaneously so a single instruction can edit both entities. Cost: ~700 input tokens + ~100 output tokens per edit at Haiku pricing.
 - **Separated overflow containers for scaled backgrounds** — CSS transforms on positioned elements inflate `scrollHeight`. The song modal uses `overflow: hidden` on the outer container (clips the `scale(1.25)` ambient background) and `overflow-y: auto` on the inner container (handles content scrolling). Never put `overflow-y: auto` on the same element as a scaled absolute child.
 - **svguitar + chords-db for guitar diagrams** — svguitar renders pure SVG chord diagrams (no React 19 dependency, unlike svguitar-react), while @tombatossals/chords-db provides 2,069 voicings across 756 chord types with finger positions, fret numbers, and barre data. A custom chord name parser normalizes Unicode ♭/♯ to ASCII and handles slash chords, mapping to chords-db's key+suffix format. Both libraries are code-split into separate lazy-loaded chunks (237KB + 162KB) to avoid bloating the main bundle.

@@ -40,9 +40,9 @@ tech_stack:
   - Cloudflare Pages
   - Render.com
 platform: Web
-lines_of_code: 26246
-files: 168
-commits: 91
+lines_of_code: 26577
+files: 193
+commits: 93
 status: completed
 hidden: false
 cover_image: /images/projects/tunespace/cover.png
@@ -535,6 +535,18 @@ The fifth session introduced AI-powered editing. The user proposed using Claude 
 
 **Debugging approach:** Used `nc -z` to confirm raw TCP connectivity worked (ruling out firewall), then isolated `channel_binding=require` as the hanging parameter by testing with and without it. Discovered the pooler `search_path` issue by running `SHOW search_path` on both endpoints. Tested the full SQLAlchemy+asyncpg stack locally against Neon before deploying.
 
+### Enharmonic Chord Spelling: Music Theory vs Naive Normalization
+
+**Problem:** "Volverte a Amar" by Alejandra Guzman had its key stored as "Db" in the database, but the lead sheet rendered all chords with sharps: C#, D#m, G#, A#m, F#. The user reported the disconnect between the key display and the chord names.
+
+**Root cause:** Moises chord extraction outputs sharp notation for all accidentals (C#, D#m, G#). The import pipeline had a `_normalize_moises_key()` function that converted the song's `key` field to flats (C# major to Db), but the chord names inside the JSONB `chords.measures[].chords[].chord` values were stored raw from Moises, never normalized. So the key said "Db" while every chord name used sharps. 968 songs were affected (949 non-golden, 19 golden).
+
+**Solution (first attempt, wrong):** A naive fix that converted ALL sharp chord roots to flat equivalents across every song. This broke songs in sharp keys. A song in E major had its F#m chords rewritten as Gbm, and C#m became Dbm, which is musically incorrect. E major has 4 sharps (F#, C#, G#, D#) in its key signature, and those notes must be spelled as sharps.
+
+**Solution (correct):** Built a diatonic-aware normalization system based on key signatures from music theory. For each of the 22 possible keys, a lookup table maps only the accidentals that are DIATONIC to that key. In G major (1 sharp: F#), only Gb converts to F#. Borrowed chords like Bb (the flat III, common in pop) stay as Bb because they're not diatonic to G major. In E major (4 sharps), Gb, Db, Ab, and Eb convert to F#, C#, G#, and D# respectively, but Bb stays Bb because it's not in E major's key signature. Flat keys work in reverse: in Db major, all 5 sharps convert to their flat equivalents. Neutral keys (C major, A minor) leave chords as-is. The normalization runs both at Moises import time (preventing future mismatches) and was applied retroactively via a migration script that updated 447 songs with 16,503 chord name corrections, skipping all 22 golden (verified) songs.
+
+**Debugging approach:** Queried the database for song 671 and compared `Song.key` ("Db") against `chords.key` ("C#") and individual chord names. Traced the data flow from Moises raw output through `convert_moises_chords()` (no normalization) to `_normalize_moises_key()` (key-only normalization). After the first fix was rejected as musically incorrect, built unit tests covering all key types: Db major (pure flats), E major (4 sharps with borrowed Bb staying flat), G major (only F# converted, Bb/Eb/Ab stay flat), and C major (no changes). Verified with dry-run mode before applying the migration.
+
 ## Architecture
 
 Key technical decisions:
@@ -559,4 +571,5 @@ Key technical decisions:
 - **NL editing via Claude Haiku with constrained tool_use** — Natural language metadata editing uses the Anthropic API with forced tool_use to constrain output to valid field edits (enum of allowed fields, typed values). The interpret endpoint is read-only — it returns a preview diff; actual mutations go through existing PATCH endpoints preserving audit logging and propagation. Both song and artist tools are provided simultaneously so a single instruction can edit both entities. Cost: ~700 input tokens + ~100 output tokens per edit at Haiku pricing.
 - **Separated overflow containers for scaled backgrounds** — CSS transforms on positioned elements inflate `scrollHeight`. The song modal uses `overflow: hidden` on the outer container (clips the `scale(1.25)` ambient background) and `overflow-y: auto` on the inner container (handles content scrolling). Never put `overflow-y: auto` on the same element as a scaled absolute child.
 - **svguitar + chords-db for guitar diagrams** — svguitar renders pure SVG chord diagrams (no React 19 dependency, unlike svguitar-react), while @tombatossals/chords-db provides 2,069 voicings across 756 chord types with finger positions, fret numbers, and barre data. A custom chord name parser normalizes Unicode ♭/♯ to ASCII and handles slash chords, mapping to chords-db's key+suffix format. Both libraries are code-split into separate lazy-loaded chunks (237KB + 162KB) to avoid bloating the main bundle.
+- **Diatonic-aware enharmonic normalization** -- Chord names are normalized based on the song's key signature, not a blanket sharp-to-flat conversion. Each of the 22 major/minor keys has a lookup table mapping only its diatonic accidentals: G major converts Gb to F# (its one sharp) but leaves Bb as Bb (a borrowed chord). E major converts 4 flats to sharps (Gb, Db, Ab, Eb to F#, C#, G#, D#) but leaves Bb alone. Flat keys work in reverse. Neutral keys (C, Am) leave chords untouched. This runs at Moises import time and was retroactively applied to 447 songs.
 - **Split deployment: Cloudflare Pages + Render + Neon** — Frontend SPA on Cloudflare's CDN (free, fast, global), backend API on Render (free tier), PostgreSQL on Neon (free tier, us-west-2, scale-to-zero). Migrated from Render Postgres after free tier suspension notice. Neon required SSL handling via `connect_args` (asyncpg doesn't understand `sslmode` URL params) and using the direct endpoint over the pooler (which has an empty `search_path`). Combined cold start: Render spin-up (~5-8s) + Neon wake (~1-2s) on first request after inactivity. Password validated server-side via Bearer token middleware.

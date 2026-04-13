@@ -1,12 +1,12 @@
 ---
 title: Avellana
 slug: avellana
-description: Multilingual hospitality training platform with AI voice simulations, multi-tenant content management, and an executive progress dashboard — built as a monorepo with Next.js, FastAPI, Supabase, and Terraform IaC.
+description: Multilingual hospitality training platform with realtime AI voice simulations powered by Gemini Live native audio, multi-tenant content management, and an executive progress dashboard. Built as a monorepo with Next.js, FastAPI, Supabase, and Terraform IaC.
 date_started: 2026-03-25
-date_completed: 2026-04-07
-active_hours: 18.0
-sessions: 10
-total_prompts: 21
+date_completed: 2026-04-13
+active_hours: 27.7
+sessions: 14
+total_prompts: 26
 tech_stack:
   - Next.js 15
   - TypeScript
@@ -15,11 +15,8 @@ tech_stack:
   - SQLModel
   - PostgreSQL (Supabase)
   - pgmq
-  - Deepgram Nova-3
-  - Google Gemini 2.0 Flash
-  - Google Gemini 2.5 Pro
-  - Cartesia Sonic TTS
-  - Google Cloud TTS Neural2
+  - Google Gemini 2.5 Flash Native Audio (Live)
+  - Anthropic Claude Sonnet 4.6
   - Terraform
   - HCP Terraform
   - Railway
@@ -33,9 +30,9 @@ tech_stack:
   - TanStack Query
   - uv
 platform: Web
-lines_of_code: 5752
-files: 123
-commits: 38
+lines_of_code: 20652
+files: 194
+commits: 83
 status: in-progress
 hidden: true
 cover_image: /images/projects/avellana/cover.png
@@ -55,13 +52,16 @@ tags:
 
 ## Summary
 
-Avellana is a multilingual hospitality training platform that uses AI voice simulations to help hotel and service teams practice guest interactions. Built as a monorepo across ~18 active hours and 10 sessions, it includes a Next.js 15 frontend, FastAPI backend, Supabase-powered multi-tenant data model, and a voice simulation pipeline chaining Deepgram ASR, Gemini LLM, and Cartesia TTS. Infrastructure is fully codified with Terraform + HCP Terraform across dev/staging/prod environments.
+Avellana is a multilingual hospitality training platform that uses realtime AI voice simulations to help hotel and service teams practice guest interactions. Built as a monorepo across ~28 active hours and 14 sessions, it includes a Next.js 15 frontend, FastAPI backend, Supabase-powered multi-tenant data model, and a voice simulation pipeline built on Google Gemini 2.5 Flash Native Audio (Live) — a single model that handles ASR, LLM, and TTS over one WebSocket. Async post-session evaluation runs on Anthropic Claude Sonnet 4.6 with prompt caching. Infrastructure is fully codified with Terraform + HCP Terraform across dev/staging/prod environments.
 
 ## Features
 
 - Multi-tenant org/property data model with role-based access (director, manager, trainer, trainee)
-- AI voice simulation pipeline: Deepgram Nova-3 ASR → Gemini 2.0 Flash (turns) → Cartesia Sonic TTS
-- Async evaluation with Gemini 2.5 Pro scoring simulation sessions
+- Realtime voice simulation over one WebSocket: Gemini 2.5 Flash Native Audio handles ASR, reasoning, and TTS in a single model
+- Browser mic capture at 16 kHz PCM, streamed frame-by-frame to FastAPI, forwarded to Gemini Live; AI audio streamed back and played through a 24 kHz AudioContext queue
+- Gender-aware voice selection (Kore / Fenrir / Puck) derived from `character.voice_config`
+- Character speaks first: system prompt + kickoff `send_client_content` trigger an in-scene greeting as soon as the WebSocket opens
+- Async post-session evaluation with Anthropic Claude Sonnet 4.6 (prompt-cached rubric/policy/scenario block) in a pgmq worker
 - Executive progress dashboard with Changelog, ADRs, Kanban, and Plain English tabs
 - Magic link onboarding + password login + email/SMS password reset
 - Full IaC with Terraform, HCP Terraform remote state, and per-env Doppler secrets
@@ -70,7 +70,7 @@ Avellana is a multilingual hospitality training platform that uses AI voice simu
 - pgmq-based async job queue (zero extra infra, runs inside Supabase)
 - Knowledge-base chatbot grounded in org-specific content (planned)
 - Supabase keep-alive cron to prevent free-tier project pausing
-- Feature-flagged realtime voice path (Deepgram Voice Agent API) alongside stable turn-based default
+- Single-vendor voice path: no runtime feature flags — vendor swaps happen via a `LiveClient` Protocol fork in `voice_session.py`, per ADR-005
 
 ## How It Was Built
 
@@ -79,6 +79,8 @@ The build started with a monorepo scaffold and a deep stack audit — every majo
 The second phase tackled the data model and auth system. The multi-tenant schema was designed with "ultrathink" pressure-testing sessions to future-proof extensibility — orgs own properties, content is org-scoped but property-overridable, and operational data (sessions, evaluations) is always property-scoped. Auth uses Supabase magic links for onboarding with password login after setup.
 
 Voice vendor analysis was a recurring thread throughout the build — evolving from a simple cost comparison to a full strategic document with realtime-first ordering, per-user cost modeling at multiple usage tiers, and hot-standby fallback strategies. The project also served as a live case study for a Product Management course, with prompts and decisions captured in `docs/course/`.
+
+The third phase was the voice rebuild. The original design was a turn-based chain (Deepgram Nova-3 → Gemini Flash → Cartesia), but once Gemini 2.5 Flash Native Audio became available we collapsed the entire ASR/LLM/TTS stack into a single WebSocket-based model. This meant building a browser mic capture pipeline (16 kHz PCM via `ScriptProcessorNode`), a FastAPI WebSocket route that bridges the browser ↔ Gemini Live bidirectional stream, a `LiveClient` Protocol in `voice_session.py` so vendor code never leaks into route handlers, and a 24 kHz `AudioContext` playback queue on the client. Several low-level issues surfaced along the way: deprecated `send(input=...)` frame encoding, Supabase pooler prepared-statement conflicts, SQLAlchemy enum name mismatches, and — the most stubborn — a radio-silence bug that killed every conversation after the first turn.
 
 ## Prompts
 
@@ -105,6 +107,11 @@ Key requests that drove the build, in order:
 19. **Supabase keep-alive** — "Got the inactivity pause email. What can we do to generate basic activity?"
 20. **Kanban board** — "Render kanban as a horizontal board with columns"
 21. **Keep-alive fix** — "Got this from GitHub" (shared failing workflow screenshot, triggering the HTTP status fix)
+22. **Voice rebuild on Gemini Live** — "Switch to native-audio Gemini Live model and real browser mic + playback end-to-end"
+23. **Turn-2 radio silence** — "I first greet it, then it responds, then I say something, and then radio silence. Is the simulation not happening properly?"
+24. **Gender-aware voice** — "Add gender-aware voice selection matching the prototype"
+25. **Character speaks first** — "Please add it so the character starts speaking immediately"
+26. **Supabase Storage 403** — "Please fix the supabase storage 403 bug"
 
 ## Raw Prompts
 
@@ -142,7 +149,31 @@ Substantive user messages from the conversation, preserving original wording:
 
 > "got this from github:" (shared screenshot of failing keep-alive workflow)
 
+> "I'm noticing that if I start a conversation in the simulation, I first greet it, then it responds, then I say something, and then radio silence. Is the simulation not happening properly?"
+
+> "1. yes, please. 2. yes, please add it so the character starts speaking immediately. 3. no need for now. also, please fix the supabase storage 403 bug."
+
 ## Technical Challenges
+
+### Gemini Live turn-2 radio silence
+
+**Problem:** After rebuilding the voice pipeline on Gemini 2.5 Flash Native Audio, every simulation ran beautifully for exactly one exchange and then went dead. The trainee would greet the AI, the AI would respond with perfect native-audio voice, the trainee would speak again, and then — nothing. No audio, no transcript, no error. Just silence until the 8-minute time cap fired.
+
+**Root cause:** The `google-genai` SDK's `AsyncSession.receive()` is a turn-scoped async iterator, not a continuous stream. At `google/genai/live.py:459` it explicitly `break`s out of its inner loop after seeing `turn_complete=True`. Our `GeminiLiveClient.receive()` wrapper called `async for msg in self._session.receive()` exactly once — so after turn 1 the generator exited, the outer `pump_gemini_to_ws` task saw the end of its iterator, cleanly returned, and the WebSocket sat open with nothing listening to Gemini anymore. The docstring on the wrapper even said "Loop it so the WS handler sees a continuous stream across turns" — but the code didn't actually loop.
+
+**Solution:** Wrapped `self._session.receive()` in an outer `while True:` so a fresh turn iterator is entered after each `turn_complete`. Verified by reading the SDK source directly to confirm the break-after-turn behavior before touching the code.
+
+**Debugging approach:** Built a Python probe that drove the pipeline with synthetic audio and inspected the raw `LiveServerMessage` stream — which initially pointed at a red herring (`interrupted=True` on audio input). A text-input smoke test proved the model + config + SDK were healthy, so the issue had to be in our receive loop. Testing from a real browser with echo cancellation eliminated the `interrupted` red herring (the probe was interrupting itself). That left exactly one suspect: the wrapper's loop structure. Reading `google/genai/live.py:433-460` confirmed the turn-scoped break and closed the case.
+
+### Voice pipeline rewrite from turn-based to Gemini Live
+
+**Problem:** The original voice stack was a chain: Deepgram Nova-3 ASR → Gemini 2.0 Flash LLM → Cartesia Sonic TTS. Three vendors, three API keys, three latency budgets, and a lot of glue. When Gemini 2.5 Flash Native Audio became available — a single model that handles ASR, reasoning, and TTS over one WebSocket — the whole chain could collapse, but every layer of the stack had to be rewritten.
+
+**Root cause:** The existing `voice_session.py` was built around discrete turn boundaries and HTTP calls, not a bidirectional WebSocket with PCM streaming. The browser side used no real mic capture. FastAPI's WebSocket route had no pump-task architecture. And cross-origin browser auth had to be solved because `WebSocket` has no way to send `Authorization` headers.
+
+**Solution:** Built a `LiveClient` Protocol so route code never imports `google.genai` directly. Implemented `GeminiLiveClient` using `client.aio.live.connect(...)` + `send_realtime_input(...)` + an async `receive()` generator that yields normalized `LiveServerEvent` records (audio, input transcript, output transcript, turn-complete, interrupted). On the route side, a `pump_gemini_to_ws` task pushes Gemini audio/transcripts to the client while the main receive loop forwards browser mic frames the other way. Browser-side: `getUserMedia` + `ScriptProcessorNode` resample to 16 kHz PCM16 and send as WebSocket binary frames; incoming binary frames feed a 24 kHz `AudioContext` playback queue. Auth is smuggled through the `Sec-WebSocket-Protocol` header as `['bearer', <supabase access_token>]` subprotocols.
+
+**Debugging approach:** Compared the Google AI Studio reference prototype (`reference/google-ai-studio-prototype/components/SimulationRoom.tsx`) against the new implementation field-by-field to align `speechConfig`, `inputAudioTranscription`, and `outputAudioTranscription`. Used a Python probe to validate each layer independently before touching the browser.
 
 ### Terraform variable naming collision with Doppler
 
@@ -192,7 +223,8 @@ Key technical decisions:
 
 - **Monorepo with independent deploys** — Frontend (Vercel), API (Railway), Workers (Railway) share types via `packages/domain` but deploy independently, keeping blast radius small
 - **pgmq over Redis/SQS** — Postgres-native message queue runs inside Supabase with zero extra infra, perfect for pilot scale
-- **Turn-based voice as stable default** — Deepgram ASR → Gemini Flash → Cartesia TTS is the production path; realtime (Deepgram Voice Agent API) is feature-flagged for when latency requirements tighten
+- **Gemini Live as the only voice path** — A single model (Gemini 2.5 Flash Native Audio) handles ASR, reasoning, and TTS over one WebSocket. No feature flags, no turn-based fallback. Vendor swaps happen by forking the `LiveClient` Protocol in `voice_session.py`, per ADR-005
+- **Claude Sonnet 4.6 for async evaluation** — Scoring runs post-session in a pgmq worker with prompt caching on the stable rubric/policy/scenario block; retries up to 3x on malformed JSON
 - **Terraform + HCP Terraform** — Remote state across dev/staging/prod workspaces, with Doppler injecting secrets as `TF_VAR_` environment variables
 - **Multi-tenant with property override** — Content is org-scoped by default, property-overridable; operational data is always property-scoped. This avoids per-property content duplication while allowing local customization
 - **Cost-first vendor selection** — Every voice provider choice was modeled at lite/medium/high usage tiers with explicit $/user/month breakdowns before committing

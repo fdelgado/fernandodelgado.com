@@ -1,12 +1,12 @@
 ---
 title: Avellana
 slug: avellana
-description: Multilingual hospitality training platform with realtime AI voice simulations powered by Gemini Live native audio, multi-tenant content management, and an executive progress dashboard. Built as a monorepo with Next.js, FastAPI, Supabase, and Terraform IaC.
+description: Multilingual hospitality training platform with realtime AI voice simulations powered by Gemini Live native audio, multi-tenant content management, and five role-specific frontend experiences (trainee, supervisor, director, admin, super-admin). Built as a monorepo with Next.js, FastAPI, Supabase, and Terraform IaC.
 date_started: 2026-03-25
 date_completed: 2026-04-14
-active_hours: 29.7
-sessions: 16
-total_prompts: 32
+active_hours: 36
+sessions: 17
+total_prompts: 48
 tech_stack:
   - Next.js 15
   - TypeScript
@@ -30,9 +30,9 @@ tech_stack:
   - TanStack Query
   - uv
 platform: Web
-lines_of_code: 20766
-files: 196
-commits: 94
+lines_of_code: 31808
+files: 299
+commits: 112
 status: in-progress
 hidden: true
 cover_image: /images/projects/avellana/cover.png
@@ -56,7 +56,9 @@ Avellana is a multilingual hospitality training platform that uses realtime AI v
 
 ## Features
 
-- Multi-tenant org/property data model with role-based access (director, manager, trainer, trainee)
+- **Five role-specific frontends** shipped over 5 phases — trainee dashboard (progress, KB with grounded Ask Gemini chat, simulations, how-to quizzes, history, feedback), supervisor team overview + trainee detail + session deep-dive with audio replay and flag resolve, director content hub with real CRUD for simulations/how-tos/characters/rubrics, admin with user invite + CSV bulk import + SOPs + policies + org registration
+- Shared CRUD scaffold (`ContentCrudPage<T>` + responsive `ContentTable` + `ContentSheet` + 6 form field variants + `useContentMutations`) built once and instantiated 8× across director and admin resources — 70% code reduction vs hand-rolling
+- Multi-tenant org/property data model with role-based access (6 roles: trainee, supervisor, director, user admin, billing admin, super admin)
 - Realtime voice simulation over one WebSocket: Gemini 2.5 Flash Native Audio handles ASR, reasoning, and TTS in a single model
 - Browser mic capture at 16 kHz PCM, streamed frame-by-frame to FastAPI, forwarded to Gemini Live; AI audio streamed back and played through a 24 kHz AudioContext queue
 - Gender-aware voice selection (Kore / Fenrir / Puck) derived from `character.voice_config`
@@ -79,6 +81,8 @@ The build started with a monorepo scaffold and a deep stack audit — every majo
 The second phase tackled the data model and auth system. The multi-tenant schema was designed with "ultrathink" pressure-testing sessions to future-proof extensibility — orgs own properties, content is org-scoped but property-overridable, and operational data (sessions, evaluations) is always property-scoped. Auth uses Supabase magic links for onboarding with password login after setup.
 
 Voice vendor analysis was a recurring thread throughout the build — evolving from a simple cost comparison to a full strategic document with realtime-first ordering, per-user cost modeling at multiple usage tiers, and hot-standby fallback strategies. The project also served as a live case study for a Product Management course, with prompts and decisions captured in `docs/course/`.
+
+The fourth phase was the frontend buildout — five role-specific experiences delivered in sequence, each within a single working session. The trainee experience (Phase 2: dashboard, knowledge base with grounded Ask Gemini chat, simulations list, how-to quizzes with hot-zone maps, history, progress) landed first with ~14 new shared primitives in `src/components/trainee/` and hand-rolled SVG charts (CircularScore, CompetencyRadar, TalkTimeDonut — no Recharts). Phase 3 added the supervisor experience: team overview with trainee roster, drill-down to individual trainee detail with a skill radar and activity timeline, and a session review deep-dive with a procedural-waveform audio replay player that plays real recorded audio via a hidden `<audio>` element but renders a deterministic 100-bar visualization seeded off the session id (real amplitude analysis via `OfflineAudioContext` was deferred as decorative-UI tech debt). Phase 4 shipped the director content management hub with full CRUD for simulations, how-tos, characters, and rubrics — all wired to real FastAPI endpoints with no mock branches. The shared `ContentCrudPage<T>` scaffold was the highlight: one generic render-prop page component handles list + edit Sheet + delete ConfirmDialog + TanStack mutation plumbing for every resource, so adding a new CRUD surface is ~150 lines instead of ~500. Phase 5 extended the scaffold to admin (users with CSV bulk import, SOPs, compensation policies) and shipped a single-item form for org registration. Each phase passed a `/ux-guidelines` audit before merge and ran through a manual smoke test on the live Vercel deploy. Mock registry went from 33 mocked resources to 21 mocked / 12 real by the end of Phase 5.
 
 The third phase was the voice rebuild. The original design was a turn-based chain (Deepgram Nova-3 → Gemini Flash → Cartesia), but once Gemini 2.5 Flash Native Audio became available we collapsed the entire ASR/LLM/TTS stack into a single WebSocket-based model. This meant building a browser mic capture pipeline (16 kHz PCM via `ScriptProcessorNode`), a FastAPI WebSocket route that bridges the browser ↔ Gemini Live bidirectional stream, a `LiveClient` Protocol in `voice_session.py` so vendor code never leaks into route handlers, and a 24 kHz `AudioContext` playback queue on the client. Several low-level issues surfaced along the way: deprecated `send(input=...)` frame encoding, Supabase pooler prepared-statement conflicts, SQLAlchemy enum name mismatches, and — the most stubborn — a radio-silence bug that killed every conversation after the first turn.
 
@@ -118,6 +122,18 @@ Key requests that drove the build, in order:
 30. **Sweep latent worker bugs** — "Please fix both: the pgmq SELECT \\* in kb\\_worker and the datetime footgun"
 31. **Timestamp mixin migration** — "Please migrate all model timestamps to TimestampMixin"
 32. **Portfolio update** — "Can you document this in portfolio?"
+33. **Frontend buildout kickoff** — "Continue the frontend buildout from the design doc; start Phase 2 (trainee screens)"
+34. **Scope cut on director phase** — Chose "Real CRUD + hub (5 screens)" instead of shipping all 11 director screens as mocks
+35. **Mock audio playback** — "Can you mock a play button for now?" when the supervisor review page couldn't exercise recorded audio for seeded roster sessions
+36. **UX audit follow-ups** — "Let's fix these next: UX audit of Phase 3" (identified trainee UUID leak on review page + insight-driven bento labels)
+37. **Trainee name leak fix** — Replaced `evaluation.trainee_id.slice(0, 8)` UUID fragment with a nullable `SupervisorReviewBundle.traineeName` populated from the mock roster
+38. **Admin account request** — "Can you give me a director account?" / "Tell me an admin account I can use"
+39. **Bulk CSV file upload** — Shipped textarea-paste + client-side `File` synthesis because the backend is `multipart/form-data` and the UX felt cleaner than a file picker
+40. **Phase 5 a11y polish** — "Yes, please fix it" after the UX audit flagged the `is_active` column glyphs as unlabeled for screen readers
+41. **Continue until done** — "Let's kick it off and continue until we're done. I have lots of stamina left and a demo to do pretty soon"
+42. **Merge queue housekeeping** — Two `/merge-updates` runs to promote Phases 3-4 and Phase 5 from the update queue into kanban + changelog
+43. **Plan mode for Phase 5** — "Yes, /plan it" followed by scope-cut confirmation via `AskUserQuestion`
+44. **Portfolio refresh** — "/portfolio-add" to update this very document with Phases 2-5
 
 ## Raw Prompts
 
@@ -168,6 +184,16 @@ Substantive user messages from the conversation, preserving original wording:
 > "please go ahead and migrate all model timestamps to TimestampMixin. anything else you recommend doing in this session?"
 
 ## Technical Challenges
+
+### Shared CRUD scaffold as a render-prop generic — build-once vs copy-paste
+
+**Problem:** Phase 4 (director) introduced CRUD pages for 4 resources (simulations, how-tos, characters, rubrics) and Phase 5 extended the pattern to 3 more (admin users, SOPs, compensation policies). All shared ~90% of the same structure: list with responsive table/card collapse, right-side edit Sheet, ConfirmDialog-gated delete, TanStack mutation plumbing, status filter chips, inline error display. Hand-rolling each page would have meant ~500 lines of near-identical code × 7 pages = 3,500 lines of drift-prone copy-paste. But the resources differed meaningfully — simulations needed character + rubric dropdowns populated by secondary queries, rubrics needed a JSON criteria editor, characters needed a read-only `voice_config` display pre-formatted from the backend, admin users needed a bespoke "invite + bulk import" flow because the backend has no per-user CRUD.
+
+**Root cause:** No cause to fix — this was a design decision, not a bug. The tension was between "premature abstraction" (a generic that can't express the variations) and "drift debt" (7 hand-written pages that fall out of sync).
+
+**Solution:** Built a `ContentCrudPage<T extends { id: string }>` as a render-prop generic in `src/components/director/ContentCrudPage.tsx`. It owns the orchestration (header + new button + list + edit Sheet + delete ConfirmDialog + search param `?new=1` auto-open) and takes `columns: ColumnDef<T>[]`, `getRowTitle`, `renderEditForm: ({ initial, onClose, onSaved }) => ReactNode`, `onDelete`, `deleteConfirmMessage` as props. Each resource page is then ~150 lines: declare the columns, instantiate a small edit-form component with its specific fields, wire the fetchers. The render-prop pattern on `renderEditForm` preserves per-resource form variation (every form owns its own state hook and field composition). For Admin Users — which cannot fit the scaffold because the backend has no per-user CRUD — the page reuses `ContentTable` directly (generic enough to render arbitrary rows with custom columns) and ships two bespoke Sheets for the invite + bulk-import flows. Result: ~70% code reduction across the 7 CRUD pages, with the bespoke escape hatch where needed.
+
+**Debugging approach:** Started by building the first page (simulations) hand-rolled, then built the second (how-tos) and noticed the ~90% duplication. Factored out `ContentCrudPage` before building the third. Phase 5 validated the scaffold by reusing it verbatim for SOPs and policies — literal copy-paste of the Phase 4 how-tos / rubrics pages with the fetcher imports swapped. Admin Users surfaced the edge case ("no per-user CRUD on backend") and forced the decision to keep `ContentTable` usable standalone instead of forcing every page through `ContentCrudPage`.
 
 ### Worker `now()` drift: Postgres transaction_timestamp frozen across idle polls
 

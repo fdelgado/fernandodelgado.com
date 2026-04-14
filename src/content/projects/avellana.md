@@ -3,10 +3,10 @@ title: Avellana
 slug: avellana
 description: Multilingual hospitality training platform with realtime AI voice simulations powered by Gemini Live native audio, multi-tenant content management, and an executive progress dashboard. Built as a monorepo with Next.js, FastAPI, Supabase, and Terraform IaC.
 date_started: 2026-03-25
-date_completed: 2026-04-13
-active_hours: 27.7
-sessions: 14
-total_prompts: 26
+date_completed: 2026-04-14
+active_hours: 29.7
+sessions: 16
+total_prompts: 32
 tech_stack:
   - Next.js 15
   - TypeScript
@@ -30,9 +30,9 @@ tech_stack:
   - TanStack Query
   - uv
 platform: Web
-lines_of_code: 20652
-files: 194
-commits: 83
+lines_of_code: 20766
+files: 196
+commits: 94
 status: in-progress
 hidden: true
 cover_image: /images/projects/avellana/cover.png
@@ -52,7 +52,7 @@ tags:
 
 ## Summary
 
-Avellana is a multilingual hospitality training platform that uses realtime AI voice simulations to help hotel and service teams practice guest interactions. Built as a monorepo across ~28 active hours and 14 sessions, it includes a Next.js 15 frontend, FastAPI backend, Supabase-powered multi-tenant data model, and a voice simulation pipeline built on Google Gemini 2.5 Flash Native Audio (Live) — a single model that handles ASR, LLM, and TTS over one WebSocket. Async post-session evaluation runs on Anthropic Claude Sonnet 4.6 with prompt caching. Infrastructure is fully codified with Terraform + HCP Terraform across dev/staging/prod environments.
+Avellana is a multilingual hospitality training platform that uses realtime AI voice simulations to help hotel and service teams practice guest interactions. Built as a monorepo across ~30 active hours and 16 sessions, it includes a Next.js 15 frontend, FastAPI backend, Supabase-powered multi-tenant data model, and a voice simulation pipeline built on Google Gemini 2.5 Flash Native Audio (Live) — a single model that handles ASR, LLM, and TTS over one WebSocket. Async post-session evaluation runs on Anthropic Claude Sonnet 4.6 with prompt caching. Infrastructure is fully codified with Terraform + HCP Terraform across dev/staging/prod environments.
 
 ## Features
 
@@ -112,6 +112,12 @@ Key requests that drove the build, in order:
 24. **Gender-aware voice** — "Add gender-aware voice selection matching the prototype"
 25. **Character speaks first** — "Please add it so the character starts speaking immediately"
 26. **Supabase Storage 403** — "Please fix the supabase storage 403 bug"
+27. **End-to-end eval verification** — "Verify prompt caching kicks in on eval #2 and walk me through the checks"
+28. **Autonomous SQL checks** — "You do the SQL checks directly. I'll run the sims. Give me two trainee emails."
+29. **Diagnose stale `created_at`** — "Please fix the bug you pointed out"
+30. **Sweep latent worker bugs** — "Please fix both: the pgmq SELECT \\* in kb\\_worker and the datetime footgun"
+31. **Timestamp mixin migration** — "Please migrate all model timestamps to TimestampMixin"
+32. **Portfolio update** — "Can you document this in portfolio?"
 
 ## Raw Prompts
 
@@ -153,7 +159,29 @@ Substantive user messages from the conversation, preserving original wording:
 
 > "1. yes, please. 2. yes, please add it so the character starts speaking immediately. 3. no need for now. also, please fix the supabase storage 403 bug."
 
+> "please execute all the items you suggested, plus mine"
+
+> "you do the sql checks and everything else you have direct access to, and i will take care of the parts that require human input, such as running the actual simulations. please tell me 2 different trainee emails, so i can run 2 of the same simulations within 5 minutes."
+
+> "please fix the bug you pointed out, and i agree we can do #1 for the caching issue"
+
+> "please go ahead and migrate all model timestamps to TimestampMixin. anything else you recommend doing in this session?"
+
 ## Technical Challenges
+
+### Worker `now()` drift: Postgres transaction_timestamp frozen across idle polls
+
+**Problem:** After the eval pipeline went live, routine verification of prompt caching turned up evaluation rows with `created_at` timestamps from hours *before their sessions even existed* — one was 10 hours off. Session IDs were correct; only the timestamps were wrong. Initial hypothesis blamed a SQLModel `default_factory=datetime.utcnow` footgun in the ORM layer, but no route constructs `Evaluation(...)` via SQLAlchemy — the worker writes rows via raw SQL with no explicit `created_at`, relying on the column's `DEFAULT now()`.
+
+**Root cause:** The evaluation worker runs `psycopg2.connect(...)` with `conn.autocommit = False` and polls `pgmq.read` in a loop. When a poll returns zero messages the code sleeps and continues — without committing. That read-only transaction stays open for the entire idle window. Postgres `now()` returns `transaction_timestamp()`, the moment the transaction began, so when a real message finally arrives (sometimes many minutes later) the subsequent INSERT records `created_at` = the first empty poll's time, not the actual insert time. A one-line fix — `conn.rollback()` on the empty-poll branch — makes each iteration open a fresh transaction.
+
+**Debugging approach:** Queried staging directly via the Supabase Management API `/database/query` endpoint (the pooler rejected the Doppler-stored passwords). Joined `simulation_sessions`, `evaluations`, `ai_usage`, and `pgmq.a_evaluation_jobs` on session_id to spot the cross-wire pattern: each eval's `created_at` matched the *previous* job's archive time, not its own. Walked the worker source to trace the psycopg2 transaction lifecycle and confirmed the idle-poll transaction was the culprit. Also caught two latent bugs while in the code: `kb_worker.py` still used `SELECT *` from `pgmq.read` with positional unpacking (already broken by Supabase's new `headers` column, would have crashed on the next doc upload), and the SQLModel timestamp footgun itself — fixed both in the same pass.
+
+### Prompt caching silently below Anthropic's 1024-token minimum
+
+**Problem:** Two back-to-back eval runs on the same scenario + rubric within 2 minutes both reported `cached_tokens = 0`. Cache should have hit on the second run.
+
+**Root cause:** Not a code bug. The worker was structured correctly — `cache_control: {"type": "ephemeral"}` on the stable system block, transcript in a separate uncached block. But total input was only 888-954 tokens, below Claude Sonnet's 1024-token minimum cacheable block size. Anthropic silently returns zero cached tokens in that case with no error or warning. Deferred the fix (padding the stable block) since pilot-scale savings are trivial and real rubric/policy content will cross the threshold organically.
 
 ### Gemini Live turn-2 radio silence
 

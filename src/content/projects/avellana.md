@@ -3,9 +3,9 @@ title: Avellana
 slug: avellana
 description: Multilingual hospitality training platform with realtime AI voice simulations powered by Gemini Live native audio, multi-tenant content management, and five role-specific frontend experiences (trainee, supervisor, director, admin, super-admin). Built as a monorepo with Next.js, FastAPI, Supabase, and Terraform IaC.
 date_started: 2026-03-25
-date_completed: 2026-04-14
-active_hours: 36
-sessions: 17
+date_completed: 2026-04-16
+active_hours: 45
+sessions: 20
 total_prompts: 48
 tech_stack:
   - Next.js 15
@@ -30,9 +30,9 @@ tech_stack:
   - TanStack Query
   - uv
 platform: Web
-lines_of_code: 31808
-files: 299
-commits: 112
+lines_of_code: 41446
+files: 325
+commits: 154
 status: in-progress
 hidden: true
 cover_image: /images/projects/avellana/cover.png

@@ -4,9 +4,9 @@ slug: avellana
 description: Multilingual hospitality training platform with realtime AI voice simulations powered by Gemini Live native audio, multi-tenant content management, and five role-specific frontend experiences (trainee, supervisor, director, admin, super-admin). Built as a monorepo with Next.js, FastAPI, Supabase, and Terraform IaC.
 date_started: 2026-03-25
 date_completed: 2026-04-16
-active_hours: 45
-sessions: 20
-total_prompts: 48
+active_hours: 49
+sessions: 27
+total_prompts: 56
 tech_stack:
   - Next.js 15
   - TypeScript
@@ -30,9 +30,9 @@ tech_stack:
   - TanStack Query
   - uv
 platform: Web
-lines_of_code: 41446
-files: 325
-commits: 154
+lines_of_code: 48824
+files: 382
+commits: 195
 status: in-progress
 hidden: true
 cover_image: /images/projects/avellana/cover.png
@@ -72,7 +72,11 @@ Avellana is a multilingual hospitality training platform that uses realtime AI v
 - pgmq-based async job queue (zero extra infra, runs inside Supabase)
 - Knowledge-base chatbot grounded in org-specific content (planned)
 - Supabase keep-alive cron to prevent free-tier project pausing
-- Single-vendor voice path: no runtime feature flags — vendor swaps happen via a `LiveClient` Protocol fork in `voice_session.py`, per ADR-005
+- Single-vendor voice path: no runtime feature flags -- vendor swaps happen via a `LiveClient` Protocol fork in `voice_session.py`, per ADR-005
+- **Property-scoped messaging system** with thread-based DMs and session-anchored feedback threads, threaded replies, and in-app notifications (bell popover with real-time polling)
+- **Optimistic UI** on all messaging mutations -- messages appear instantly on send with "Sending..." state, failed messages show red error indicator with retry button, notification mark-read updates badge instantly, new-thread dialog closes immediately
+- **Scenario-gate test suite** -- 14 Playwright specs (22 tests) that walk real user journeys against a live local API + dev Supabase, wired into `/commit-smart` as a mandatory preflight. Covers property create, member invite, bulk import, content CRUD, messaging, assignment CRUD, session auto-complete, cross-property isolation, trainee learning, KB browse, characters + rubrics, evaluation RBAC, team dashboard, user lifecycle. Caught 7 real bugs on first run including the Workstream J snake_case↔camelCase drift and a latent 500-on-enum-name in the simulation create route
+- **Flat-table UI system** -- after shipping the first director screens with chunky white-card list wrappers, the whole app was refactored to a flat "table with hairlines, no card chrome" pattern. Applied to 10+ surfaces via a single `ContentTable` refactor + targeted page rewrites (assignments, assignment detail, team roster, team reviews, content hub, 4 analytics tables). Subtle uppercase tracking column headers, CSS Grid row alignment, `border-b border-outline-variant` row dividers
 
 ## How It Was Built
 
@@ -133,7 +137,19 @@ Key requests that drove the build, in order:
 41. **Continue until done** — "Let's kick it off and continue until we're done. I have lots of stamina left and a demo to do pretty soon"
 42. **Merge queue housekeeping** — Two `/merge-updates` runs to promote Phases 3-4 and Phase 5 from the update queue into kanban + changelog
 43. **Plan mode for Phase 5** — "Yes, /plan it" followed by scope-cut confirmation via `AskUserQuestion`
-44. **Portfolio refresh** — "/portfolio-add" to update this very document with Phases 2-5
+44. **Portfolio refresh** -- "/portfolio-add" to update this very document with Phases 2-5
+45. **Messaging system design** -- "everyone can message everyone within a hotel property, threaded replies, session-anchored feedback threads, in-app notifications"
+46. **Optimistic UI mandate** -- "every action that a user takes, it shows an instant reaction showing the state they expect. if there are network calls that need to happen behind the scenes, fire them off, but don't wait for a 200 response before updating the state of the UI. if for some reason the network call fails, please show a clear indicator in the UI that it failed, and give the user a chance to retry"
+47. **Definition of Done enforcement** -- "Please remember to ONLY claim that a task, phase or project is complete AFTER it's been pushed to avellana.digital AND you have thoroughly tested it works"
+48. **Scenario gate: build a real safety net** -- "The point of this exercise is not JUST to catch bugs like the ones in workstream J. It's in general about having you create enough realistic scenario tests that can be run, and then a report produced of what is not working as intended" -- led to the `/scenario-tests` skill, 14 spec files, and a `/commit-smart` preflight that blocks red commits
+49. **Test coverage audit** -- asked which parts of the project aren't yet exercised by the gate; led to 6 additional Wave 2 scenarios (trainee learning, KB curated list, characters+rubrics CRUD, evaluation RBAC, team dashboard, user lifecycle) and a "Deferred" section for surfaces that need worker-in-gate or a mock flag first
+50. **Flat-table UI redesign** -- "this page looks really ugly. let's please get rid of all the white (it should blend with the background), and make sure it displays more like a table. Once you deliver a visually pleasing and aligned version of this, please apply it everywhere else"
+51. **Simulation 500→422 fix** -- tightened `SimulationCreate.voice_adapter` from `str` to `VoiceAdapterType` so Pydantic rejects invalid enum names before they reach Postgres. Regression test added to `test_content_routes.py`. Bug was surfaced by the scenario gate writing `characters-rubrics-crud.spec.ts`
+52. **Skill-spirit edit: depth over breadth** -- "instead of it creating 10 instances of an object, it should instead prioritize creating a single instance of an object, stress testing it, and then moving on to other functionality" -- codified into `/scenario-tests` SKILL.md principle #7 and into the canonical `scenarios.md` review checklist
+53. **Propagation discipline** -- once the flat-table pattern was approved on assignments, applied it to 6 ContentCrudPage-driven director surfaces (how-tos, simulations, characters, rubrics, admin/sops, admin/policies), plus team overview, team reviews, content hub, 4 analytics tables, and assignment detail
+54. **Course doc handoff** -- added the scenario gate pattern to the Aprender PM course's `ai-coding-workflow.md` best-practices doc as a PM-framed subsection under "Testing is a Product Requirement"
+55. **Org-level director fallback** -- Ana was getting "Property context required" on `/content/assignments` in production despite the B1 backend fix; root cause was `useCallerContext` returning `propertyId=null` for org-scoped directors. Added a first-property fallback off `organizations[0].properties[0]`
+56. **Ana's path verified** -- user confirmed production flow works for Ana after deploy landed; closes the loop on the B1 regression
 
 ## Raw Prompts
 
@@ -182,6 +198,18 @@ Substantive user messages from the conversation, preserving original wording:
 > "please fix the bug you pointed out, and i agree we can do #1 for the caching issue"
 
 > "please go ahead and migrate all model timestamps to TimestampMixin. anything else you recommend doing in this session?"
+
+> "everyone should be able to message everyone within a hotel property... threaded replies... yes, send a notification... it's related, but not a replacement. we should use the overall messaging pipeline for all of this. it should support sending regular messages, as well as messages tied to a specific run of a simulation with the threaded replies"
+
+> "when I typed a message back from diego to carlos, it took a good 5+ seconds for the message to show up in the UI. i thought for a moment it was broken. please make it so that every action that a user takes, it shows an instant reaction showing the state they expect. if there are network calls that need to happen behind the scenes, fire the off, but don't wait for a 200 response before updating the state of the UI. if for some reason the network call fails, please show a clear indicator in the UI that it failed, and give the user a chance to retry. This is a very general and useful principle, that may even need to be added to claude.md, ux-guidelines skills, etc."
+
+> "Please remember to ONLY claim that a task, phase or project is complete AFTER it's been pushed to avellana.digital AND you have thoroughly tested it works. Please let's raise the quality bar."
+
+> "The point of this exercise is not JUST to catch bugs like the ones in workstream J. It's in general about having you create enough realistic scenario tests that can be run, and then a report produced of what is not working as intended..."
+
+> "this page looks really ugly. let's please get rid of all the white (it should blend with the background), and make sure it displays more like a table. Once you deliver a visually pleasing and aligned version of this, please apply it everywhere else where you were using these ugly tables"
+
+> "i want to edit the spirit of the /scenario-tests skill - specifically, instead of it creating 10 instances of an object, it should instead prioritize creating a single instance of an object, stress testing it, and then moving on to other functionality. Only create multiple instances when it's necessary to test some complex interaction or dependency between the various objects."
 
 ## Technical Challenges
 
@@ -263,6 +291,36 @@ Substantive user messages from the conversation, preserving original wording:
 
 **Solution:** Added a runtime guard to skip Supabase initialization during static prerender, making auth pages fully dynamic and bypassing static export for those routes.
 
+### Scenario gate: turning "we need tests" into a commit-blocking safety net
+
+**Problem:** The Workstream J rollout (assignments + analytics) passed unit tests and component tests, but a real cross-role browser walk surfaced a snake_case ↔ camelCase drift between the Python API and the TypeScript domain layer that broke the director's assignment list. Neither pytest nor vitest caught it. The ask became broader than one bug: "create enough realistic scenario tests that a report is produced of what's not working as intended." Not a spot-check — an automated gate that blocks commits when red.
+
+**Root cause:** The project had three green test suites (API pytest, frontend vitest, frontend Playwright smoke) but none of them exercised the full browser-to-database journey of a cross-role user. Contracts drift at seams the unit tests don't touch: a field renamed on the backend can stay green in pytest and still blow up the frontend list.
+
+**Solution:** Built a `/scenario-tests` skill + 14 Playwright specs (22 tests) in `apps/frontend/tests/scenarios/` that log in as seeded users via real Supabase auth and walk multi-step journeys against a live local API + dev Supabase. Mocked only the paid/non-deterministic edges (Gemini Live voice, Anthropic eval). Wired into `/commit-smart` as a mandatory preflight via `scripts/gate-check.sh`. First run caught 7 real bugs including B1 (org-level DIRECTOR could not see assignments), B2 (timezone-aware DATETIME coercion), B3 (content version unique-constraint collision on delete), a JWKS lazy-init race, and a simulation-create 500-on-enum-name that had been latent in the `voice_adapter` field for weeks.
+
+**Debugging approach:** Built the first scenario (assignment-crud happy path) and intentionally ran it against the then-broken backend to surface B1; fixed backend; re-ran gate; repeated for each subsequent bug until all 11 specs went green. Then ran a coverage audit — "which parts of the project aren't as tested yet?" — identifying 7 untested surfaces (trainee learning, KB, characters/rubrics, evaluation RBAC, team dashboard, user lifecycle, org self-signup). Six were achievable today (org self-signup was deferred because no public create-org API exists yet). Each added scenario surfaced at least one contract mismatch that needed to be fixed or documented.
+
+### "Depth over breadth on a single object" as a scenario-test principle
+
+**Problem:** Early versions of some scenario specs spun up 3 instances of the same object with three different variants ("create one with priority LOW, one MEDIUM, one HIGH") just for "coverage by count." The specs padded wall time, obscured which variant failed, and were easy to misread as proving more than they actually did.
+
+**Root cause:** Design choice, not a bug. The underlying question was how to allocate scenario budget between object count and object depth. Multiple instances are sometimes necessary (cross-tenant isolation, bulk imports, list ordering, aggregation) but usually not — the interesting bugs live in the *transitions* of one object's state machine, not in the uniformity of N instances that never interact.
+
+**Solution:** Codified a seventh core principle in the `/scenario-tests` skill: "Depth over breadth on a single object." Default is one instance through its full lifecycle (create → edit → state transitions → terminal states → idempotency). Multiple instances require a justification tied to the behavior under test. The principle was documented in `references/scenario-design.md` as a new subsection, a corresponding anti-pattern in "What NOT to put in a scenario," and a sixth audit question in the scenarios-list review checklist. Same wording was added to the Aprender PM course's `ai-coding-workflow.md` under "Testing is a Product Requirement" so students inherit the discipline.
+
+**Debugging approach:** No debugging — this was a writing-and-reframing exercise. The trigger was a user prompt pointing out that the skill's default behavior was to pad with instances rather than exercise transitions; the fix was a surgical SKILL.md edit + propagated reference-doc edits + course handoff. Test: did the next scenario we wrote default to depth? Yes (e.g., `user-lifecycle.spec.ts` exercises one user through create → deactivate → reactivate → magic-link, not four users with four role variants).
+
+### Flat-table UI system: from chunky card-wrapped lists to hairline-divided tables
+
+**Problem:** The first wave of director screens (assignments, how-tos, simulations, characters, rubrics, admin/sops, admin/policies, team overview, analytics) all used a `<Card className="p-0">` wrapper around list content. Against the light-gray page background, each card read as a hard white block with inconsistent column alignment — "white on white on white." User feedback on the assignments page: "this looks really ugly. let's please get rid of all the white, and make sure it displays more like a table."
+
+**Root cause:** A `Card` component whose default surface color (`var(--color-surface-container-lowest)`) is nearly white by design. The wrapper was fine for summary tiles but created visual noise for list pages, which needed to read as tabular data. List items were laid out with nested flex rows that never actually lined up as a proper grid — progress bars and archive buttons right-aligned, but the middle content didn't share columns across rows, so the "table" read as stacked cards.
+
+**Solution:** Removed the Card wrapper from all list pages and replaced it with a section-level pattern: a bottom-bordered header with title + row count, optional column headers in uppercase tracking with a full-width `border-b`, and CSS Grid rows with `border-b border-outline-variant` hairlines (last-border-none). Grid templates sized to each page's columns. Hover tint via `var(--color-surface-container-low)` only. Propagated via one refactor of `ContentTable` (drives 6 director CRUD pages) plus targeted rewrites of 4 analytics tables, team roster, team reviews, content hub, and assignment detail. The messaging app was intentionally left alone because its two Cards are chat-pane chrome, not a table.
+
+**Debugging approach:** Took a screenshot of the offending page, read the page source, identified the `Card` wrapper + flex-based row layout. Designed the new pattern inline on assignments (section header → column labels → CSS Grid rows → hairline dividers). After user approved, surveyed all pages using `<Card className="p-0">` or `divide-y divide-[var(--color-outline-variant)]` with grep, then refactored each. All 80 vitest tests still green; typecheck clean.
+
 ### Supabase keep-alive workflow: silent HTTP failures
 
 **Problem:** A cron workflow to prevent Supabase free-tier pausing failed silently — the logs showed "ping failed" but no HTTP status code, making it impossible to diagnose whether the issue was bad keys, wrong URL, or a network problem.
@@ -281,4 +339,7 @@ Key technical decisions:
 - **Claude Sonnet 4.6 for async evaluation** — Scoring runs post-session in a pgmq worker with prompt caching on the stable rubric/policy/scenario block; retries up to 3x on malformed JSON
 - **Terraform + HCP Terraform** — Remote state across dev/staging/prod workspaces, with Doppler injecting secrets as `TF_VAR_` environment variables
 - **Multi-tenant with property override** — Content is org-scoped by default, property-overridable; operational data is always property-scoped. This avoids per-property content duplication while allowing local customization
-- **Cost-first vendor selection** — Every voice provider choice was modeled at lite/medium/high usage tiers with explicit $/user/month breakdowns before committing
+- **Cost-first vendor selection** -- Every voice provider choice was modeled at lite/medium/high usage tiers with explicit $/user/month breakdowns before committing
+- **Optimistic UI as a mandatory convention** -- All mutations use TanStack Query `onMutate` to update the cache before the server responds. Failed mutations show inline error state with retry. Codified in CLAUDE.md and UX guidelines skill so the pattern is enforced on every future feature
+- **Scenario gate as the primary commit gate** -- Browser-level Playwright specs that walk real cross-role journeys against a live API + dev Supabase, wired into `/commit-smart` as a preflight. Unit tests and component tests are still required, but a red scenario gate blocks shipping. Principle: one object through its full lifecycle, not N objects at surface depth. Every new cross-role feature ships with its own scenario before it's "done"
+- **Flat-table UI pattern over card-wrapped lists** -- List pages sit directly on the page background with hairline row dividers + uppercase tracking column headers + CSS Grid alignment. Cards reserved for genuine summary tiles and chat-pane chrome. Applied across 10+ director / team / analytics surfaces so the visual language stays consistent

@@ -3,10 +3,10 @@ title: Avellana
 slug: avellana
 description: Multilingual hospitality training platform with realtime AI voice simulations powered by Gemini Live native audio, multi-tenant content management, and five role-specific frontend experiences (trainee, supervisor, director, admin, super-admin). Built as a monorepo with Next.js, FastAPI, Supabase, and Terraform IaC.
 date_started: 2026-03-25
-date_completed: 2026-04-16
-active_hours: 49
-sessions: 27
-total_prompts: 56
+date_completed: 2026-04-20
+active_hours: 62
+sessions: 32
+total_prompts: 75
 tech_stack:
   - Next.js 15
   - TypeScript
@@ -30,9 +30,9 @@ tech_stack:
   - TanStack Query
   - uv
 platform: Web
-lines_of_code: 48824
-files: 382
-commits: 195
+lines_of_code: 133654
+files: 1244
+commits: 282
 status: in-progress
 hidden: true
 cover_image: /images/projects/avellana/cover.png
@@ -77,6 +77,15 @@ Avellana is a multilingual hospitality training platform that uses realtime AI v
 - **Optimistic UI** on all messaging mutations -- messages appear instantly on send with "Sending..." state, failed messages show red error indicator with retry button, notification mark-read updates badge instantly, new-thread dialog closes immediately
 - **Scenario-gate test suite** -- 14 Playwright specs (22 tests) that walk real user journeys against a live local API + dev Supabase, wired into `/commit-smart` as a mandatory preflight. Covers property create, member invite, bulk import, content CRUD, messaging, assignment CRUD, session auto-complete, cross-property isolation, trainee learning, KB browse, characters + rubrics, evaluation RBAC, team dashboard, user lifecycle. Caught 7 real bugs on first run including the Workstream J snake_case↔camelCase drift and a latent 500-on-enum-name in the simulation create route
 - **Flat-table UI system** -- after shipping the first director screens with chunky white-card list wrappers, the whole app was refactored to a flat "table with hairlines, no card chrome" pattern. Applied to 10+ surfaces via a single `ContentTable` refactor + targeted page rewrites (assignments, assignment detail, team roster, team reviews, content hub, 4 analytics tables). Subtle uppercase tracking column headers, CSS Grid row alignment, `border-b border-outline-variant` row dividers
+- **Demo rebuild pipeline** -- one-command wipe→seed→gate orchestration (`scripts/demo-rebuild.sh [local|staging|prod]`) with per-env safety guards. Staging wipe is allow-listed to the project ref `yaufwtqprpnkjamllids`; the one-time prod wipe used on 2026-04-20 required a triple barrier (date-rotated env var, explicit confirm phrase, interactive row-count typeback) and the script was then deleted from the tree so it can't be re-run by accident. pgmq purge calls wrapped in savepoints so a missing queue doesn't silently abort the outer transaction
+- **YAML-fed narrative seed** -- `scripts/seed/fixtures/*.yaml` holds the demo narrative as data: 10 employees with tenure + languages + performance arc + supervisor notes, 5 Costa Rica luxury-hotel employment policies in ES+EN (overtime, PTO, tipping, sick leave, shift swap), 3 supervisor↔trainee message threads with cross-referenced evaluations, and 17 Spanish-language simulations authored from a real hotel-operations PDF (`reference/Hotel Cases.pdf`). Hand-crafted turn-level transcripts generated at seed time give every one of 50 sessions a realistic evaluation-detail page without Anthropic tokens
+- **Security & Observability Phase 1** -- structured JSON logging across API and workers, `X-Request-Id` correlation through HTTP + WebSocket + pgmq job loops, Sentry integration with ContextVar-tagged `before_send`, and a per-tenant monthly AI-spend cap enforced at `/sessions/start`, `/kb/ask`, and `/kb/upload` (default $50/org during pilot, configurable, with 429 response + Sentry event on breach)
+- **Phase 4.5 property settings CRUD** -- real Locations and Job Roles endpoints (FastAPI + SQLModel + Supabase migration) with frontend pages wired via the same `ContentCrudPage<T>` scaffold; `useContentMutations` accepts a `propertyId` prop so property-scoped resources reuse identical mutation plumbing as org-scoped ones
+- **Structured editors replacing raw JSON** -- three new director-facing editor components (`RubricCriteriaEditor`, `PolicyTiersEditor`, `KeyValueEditor`) eliminate every raw JSON textarea from the director UI. Controlled components with no local state, drop-in replacements for the old `JsonField`. `RubricCriteriaEditor` has a per-criterion "Add notes" chevron toggle that auto-expands when editing existing content; `PolicyTiersEditor` uses a `sm:grid-cols-[1fr_120px_140px]` responsive grid; `KeyValueEditor` converts `Record<string,string>` to an ordered pair list to prevent duplicate-key collapse
+- **Test coverage upgrades** -- ~130 new tests targeting previously-thin areas: `grounding.py` (18%→100%), `analytics_aggregator.py` (23%→92%), `assignments.py` routes (49%→91%), `kb_worker.py` (45%→73%). Total test suite now 790 tests (97 frontend + 605 API + 88 workers)
+- **Content route factory** -- `apps/api/app/routes/content.py` refactored from 1334 to 850 lines via a `_register_content_type(cfg)` closure that generates all 7 standard endpoints per resource. Closure capture (local variables at top of function) sidesteps Pydantic's leading-underscore rejection; `Path(alias=item_id)` maps path parameters to their resource-specific names without `**kwargs`
+- **Feedback page redesign** -- `/feedback/[sessionId]` replaced the two-column "Detailed Feedback" card layout (large percentage numbers) with the single-column per-criterion progress-bar style from the post-sim result screen (`score / max_score` + progress bar + feedback text). Conversation timeline bar now renders one segment per transcript turn in chronological order (interleaved blue/gray pattern) instead of stacking all trainee time then all AI time
+- **Wave 3 scenario gate** -- 9 new Playwright specs (6 per-role smoke structure-only, 1 end-to-end journey with Gemini Live + Claude evaluator mocked, 2 regression specs locking in multi-policy grounding and session-end fallback) plus a `withConsoleCapture(test)` fixture that fails the test on any unmatched `console.error` or `pageerror`. Allowlist entries require a human-readable `reason` field
 
 ## How It Was Built
 
@@ -150,6 +159,25 @@ Key requests that drove the build, in order:
 54. **Course doc handoff** -- added the scenario gate pattern to the Aprender PM course's `ai-coding-workflow.md` best-practices doc as a PM-framed subsection under "Testing is a Product Requirement"
 55. **Org-level director fallback** -- Ana was getting "Property context required" on `/content/assignments` in production despite the B1 backend fix; root cause was `useCallerContext` returning `propertyId=null` for org-scoped directors. Added a first-property fallback off `organizations[0].properties[0]`
 56. **Ana's path verified** -- user confirmed production flow works for Ana after deploy landed; closes the loop on the B1 regression
+57. **Observability phase 1** -- "add structured JSON logging, request-id tracing, Sentry error sink, and a per-tenant AI-spend cap" — shipped `logging_config.py`, `RequestIdMiddleware`, `observability.py`, `budget_gate.py`, and 15 new tests all in one pass
+58. **Claude Design research** -- "research claude design directly from anthropic and help me write a prompt to redesign avellana" — pulled the canonical four-element prompt structure (Goal / Layout / Content / Audience) from Anthropic's help center and surfaced the Inter-font tension in the current design tokens
+59. **Wipe + reseed pipeline** -- "wipe the db, but then have scenario tests to recreate seed data. I want the seed data to be as realistic as possible, especially the simulations, the characters, the names of employees, past runs with time durations, scores and transcripts"
+60. **/scenario-tests skill compliance** -- "please make sure you use the principles of /scenario-tests" — re-scoped the test plan to structure-only smoke specs, one deep journey instead of many shallow ones, and trimmed the regression list from 5 to 2 (kept only the specs exercising distinct state transitions)
+61. **Hotel Cases PDF** -- "in the reference/ subdirectory, I put a PDF file titled Hotel Cases that has very relevant simulations to please seed" — 17 real Spanish-language scenarios from a working LATAM hotel added as a new fixture + seeder hook, keyed to existing characters + rubrics
+62. **Prod scope clarification** -- "there are no real pilot users on avellana.digital yet... so this is the one time where it's totally fine to wipe what's on avellana.digital" — triggered the one-time prod-wipe script with a triple-barrier guard, then its removal from the tree
+63. **Staging pool debugging marathon** -- FK-ordering bug, `knowledge_base_embeddings` vs `chunks` typo, `pgmq.purge_queue` on missing queue aborting the transaction silently, Supabase pooler circuit breaker tripping for ~8 min after repeated bad-auth attempts, password rotation in Doppler via stdin so the CLI doesn't echo it — five distinct failure modes, each surfaced by running the wipe + seed for real
+64. **Wake me in 20 min** -- "wake up in 20 min to do it" — scheduled a one-shot cron via `CronCreate` to resume the rebuild after the pooler circuit breaker cleared
+65. **Worker path proven live** -- staging worker picked up the seeded pgmq PENDING job and wrote the evaluation row within seconds, draining the queue to 0 before verification ran. End-to-end worker path validated through real infrastructure
+66. **Housekeeping pass** -- "anything left to do?" → kanban + changelog + Wave 3 PROPOSED→APPROVED flip + 3 memory files capturing non-obvious gotchas + `.gitignore` carve-out for `.env.*.example` templates + this portfolio update
+67. **Portfolio documentation of the meta-loop** -- using the same platform to capture how the platform was built, now augmented with the demo rebuild and observability work from 2026-04-20
+68. **Two-commit atomic shipping** -- `feat(seed): demo rebuild pipeline` + `test(scenarios): Wave 3 — per-role smoke, journey, regression + console gate` split for reviewability, both green on CI first push
+69. **Phase 4.5 director screens** — "let's /plan P1 Director screens (Phase 4.5) - Locations, Job Roles, Assignments, Analytics backends. The mocked placeholders exist; this is building the real CRUD endpoints + wiring the UI."
+70. **Tech debt + P2 sweep** — "can we please handle all tech debt as well as low/medium effort P2 backlog?" — triggered pgmq canary tests, TimestampMixin migration, content route factory refactor, conftest extraction, AiUsage timestamp fix
+71. **Coverage audit and upgrades** — "can you /plan serious upgrades to those 4 areas?" — led to ~130 new tests across grounding, analytics_aggregator, assignments routes, and kb_worker
+72. **Raw JSON elimination** — "i like the suggestion of polishing data creation/editing so there is no raw JSON anywhere for users to see or edit. Can you please investigate all the places where this needs to be fixed?" — produced RubricCriteriaEditor, PolicyTiersEditor, KeyValueEditor
+73. **Prod verification + UX audit housekeeping** — "let's do #1 and #2 from the housekeeping list" — confirmed CI green on avellana.digital, ran /ux-guidelines on all three new editor components, applied three touch-target and mobile-layout fixes
+74. **Feedback page visual redesign** — "i Like the 3-5 point scale of the rubrics, and the way these are shown right after a sim happens. please use this way of presenting information, make it narrower to a single column and replace the detailed feedback section on this screen" (shared screenshot of EvalResultScreen and FeedbackSummaryPage side by side)
+75. **Conversation timeline fix** — "the color-coded conversation bar does not seem very accurate. specifically, diego spoke for longer than 1 second and it should show the colors intertwined, depending on who spoke when during the conversation"
 
 ## Raw Prompts
 
@@ -210,6 +238,30 @@ Substantive user messages from the conversation, preserving original wording:
 > "this page looks really ugly. let's please get rid of all the white (it should blend with the background), and make sure it displays more like a table. Once you deliver a visually pleasing and aligned version of this, please apply it everywhere else where you were using these ugly tables"
 
 > "i want to edit the spirit of the /scenario-tests skill - specifically, instead of it creating 10 instances of an object, it should instead prioritize creating a single instance of an object, stress testing it, and then moving on to other functionality. Only create multiple instances when it's necessary to test some complex interaction or dependency between the various objects."
+
+> "let's do /plan a way to wipe the db, but then have scenario tests to recreate seed data. I want the seed data to be as realistic as possible, especially the simulations, the characters, the names of employees, past runs with time durations, scores and transcripts, etc. we don't need to make up audio files, but outside of that, want to have almost everything be seeded in pretending to be a real run."
+
+> "i care less about the quality of how to's, SOPs, etc, but the compensation policies, assignments, review comments, detailed simulation instructions, and messages should be quite realistic - i want to be able to give a polished demo."
+
+> "yes, and can you please make sure you use the principles of /scenario-tests?"
+
+> "in the reference/ subdirectory, I put a PDF file titled Hotel Cases that has very relevant simulations to please seed"
+
+> "there are no real pilot users on avellana.digital yet. they're all made up, because the overall project is still in development. so this is the one time where it's totally fine to wipe what's on avellana.digital and reseed via scenario tests."
+
+> "wake up in 20 min to do it"
+
+> "let's /plan P1 Director screens (Phase 4.5) - Locations, Job Roles, Assignments, Analytics backends. The mocked placeholders exist; this is building the real CRUD endpoints + wiring the UI."
+
+> "can we please handle all tech debt as well as low/medium effort P2 backlog?"
+
+> "can you /plan serious upgrades to those 4 areas?"
+
+> "i like the suggestion of polishing data creation/editing so there is no raw JSON anywhere for users to see or edit. Can you please investigate all the places where this needs to be fixed? /plan"
+
+> "i Like the 3-5 point scale of the rubrics, and the way these are shown right after a sim happens. please use this way of presenting information, make it narrower to a single column and replace the detailed feedback section on this screen"
+
+> "the color-coded conversation bar does not seem very accurate. specifically, diego spoke for longer than 1 second and it should show the colors intertwined, depending on who spoke when during the conversation"
 
 ## Technical Challenges
 
@@ -321,6 +373,46 @@ Substantive user messages from the conversation, preserving original wording:
 
 **Debugging approach:** Took a screenshot of the offending page, read the page source, identified the `Card` wrapper + flex-based row layout. Designed the new pattern inline on assignments (section header → column labels → CSS Grid rows → hairline dividers). After user approved, surveyed all pages using `<Card className="p-0">` or `divide-y divide-[var(--color-outline-variant)]` with grep, then refactored each. All 80 vitest tests still green; typecheck clean.
 
+### Supabase pooler circuit breaker during a live staging wipe
+
+**Problem:** Mid-way through wiping staging to reseed `avellana.digital` with a polished demo narrative, the pooler started returning `InternalServerError: Circuit breaker open: Too many authentication errors` on every connection attempt. The first connection had worked, the wipe had started, then the next call failed. Iteration on the staging password (user-pasted version failed, Doppler's stored version failed) had burned through the pooler's bad-auth budget fast enough to trip the breaker.
+
+**Root cause:** Supabase's shared pooler deliberately rate-limits bad credentials per source to protect the upstream DB. Good-faith iteration looks identical to brute-force from the pooler's point of view. Once the breaker opens, even correct credentials get rejected until the rate-limit window clears — not a "back off for 30 seconds" window but something on the order of 5–10 minutes. The IPv4 direct connection (`db.<ref>.supabase.co`) that would have bypassed the pooler is disabled on the free tier.
+
+**Solution:** Stopped guessing and scheduled a one-shot `CronCreate` job to resume the wipe 20 minutes later. Also patched the wipe script before the retry so we didn't burn the new breaker window on the same bugs: (1) FK-ordering fix so `message_threads` is deleted before `simulation_sessions` (that FK kept the first wipe attempt from committing), (2) `knowledge_base_embeddings` vs `knowledge_base_chunks` table-name typo, and (3) wrapping `pgmq.purge_queue` calls in SAVEPOINTs because calling that function on a non-existent queue silently aborts the outer transaction. On resume, authentication worked on the first try and the wipe + seed completed cleanly.
+
+**Debugging approach:** Smoke-tested the connection non-destructively (`SELECT current_user`) instead of re-running the full wipe, so the auth path could be observed in isolation from the deletion logic. Used a `Monitor` loop polling the pooler with a 30-second interval until `POOLER_READY` appeared in the event stream. Inspected both versions of the password (user-pasted and Doppler) by length and comparison, without ever printing the value, to identify that both were wrong before the user reset it in Supabase. Wrote the bug into memory (`feedback_supabase_pooler_circuit_breaker.md`) so future sessions won't rediscover the wait time the hard way.
+
+### pgmq.purge_queue on a missing queue silently rolls back the transaction
+
+**Problem:** The first staging wipe logged "30 tables deleted" across the console and reported `done.` — but a count query a few seconds later showed every row still present at the exact same counts as before. The `delete` statements had run successfully according to the script's output; the data was still there according to reality.
+
+**Root cause:** Inside the wipe's `async with conn.transaction()` block, the script called `pgmq.purge_queue('kb_documents')` on a queue that didn't exist in staging. The call raised a Postgres exception, which Python's `try/except` swallowed — but Postgres had already marked the enclosing transaction as aborted. The outer `async with conn.transaction()` context manager tried to commit, but Postgres converted that commit to a rollback because the transaction was aborted. Every prior DELETE was silently undone. Python-level exception handling does not reset the Postgres transaction state — only a SAVEPOINT or a fresh transaction can.
+
+**Solution:** Wrapped each `pgmq.purge_queue` call in a nested `async with conn.transaction()` (SAVEPOINT) so a missing-queue error stays contained to that inner scope. Also added a pre-check: `SELECT 1 FROM pg_tables WHERE schemaname='pgmq' AND tablename=$1` with `f"q_{queue}"` before calling purge, which is cheaper and cleaner than relying on exception handling at all. Second wipe attempt committed correctly and the counts query confirmed zeros. Documented in memory (`feedback_pgmq_purge_queue_transaction_abort.md`) as a general pattern: never call a function that might throw inside a transaction without a SAVEPOINT.
+
+**Debugging approach:** Ran a read-only counts query against each table referenced in `DELETE_ORDER` right after the "wipe succeeded" message. The exact-match between pre-wipe counts and post-wipe counts was the tell — a real deletion would have left zeros or a few rows, not identical values. Traced the symptom backward to the pgmq error in the logs, then forward to the Postgres transaction lifecycle to understand why Python's `except` didn't prevent the rollback.
+
+### Running `seed.sql` without psql via asyncpg's simple protocol
+
+**Problem:** The demo rebuild wipes the staging DB (preserving `auth.users`) and then needs to apply `supabase/seed.sql` as the baseline before the Python overlay runs. Locally this is `supabase db reset`; against staging there's no `psql` on PATH and `supabase db push` only applies migrations, not seed files.
+
+**Root cause:** The existing seed.sql leans on psql-specific `\set` directives for ~53 variable substitutions, has an `INSERT INTO auth.users (...)` block that would conflict with the preserved users, and has two `UPDATE public.users SET preferred_language` statements that are idempotent-but-redundant post-wipe. A naive `conn.execute()` on the raw file would fail on the first `\set`.
+
+**Solution:** New `scripts/apply_baseline_seed.py` that reads `seed.sql`, parses `\set var '''value'''` entries into a Python dict, strips the `\set` directives, removes the auth.users INSERT block and the two `UPDATE public.users` statements, substitutes `:var` occurrences with quoted values (sorted by key length descending so `:org_id` doesn't consume part of a longer name), then passes the whole remaining script to `conn.execute(sql)` — a single call with no parameters, which forces asyncpg's simple protocol and allows multi-statement execution. One network round-trip runs all ~18 surviving statements in order.
+
+**Debugging approach:** First attempt used a naive statement splitter that split on `;\n` — it only found 2 INSERTs because the E-string bodies in how-to-guide inserts contained `;`-terminated lines inside markdown. Switched to the "feed the whole script" approach after reading asyncpg's protocol docs: simple protocol runs multi-statement, extended protocol rejects it, and any `$N` parameter forces extended. No parameters = simple protocol = multi-statement works. Verified by running against staging and watching `[baseline] seed.sql applied successfully` land in under a second. Documented in memory (`feedback_asyncpg_simple_protocol_multistatement.md`) for future use.
+
+### FastAPI route factory: Pydantic rejects default params, `**kwargs` not supported
+
+**Problem:** `content.py` had grown to 1334 lines by repeating the same 7 endpoints (list, create, get, update, publish, archive, delete) for each of 8 content types. A factory function that accepted a config dataclass and registered all 7 routes would cut it to ~850 lines, but two FastAPI constraints blocked naive approaches. First: Pydantic rejects function parameters whose names start with an underscore (e.g., `_cfg: _ContentTypeConfig = cfg` in the handler signature causes `ValueError: Fields must not use names with leading underscores`). Second: FastAPI doesn't support `**kwargs` in route handler signatures — it can't introspect them to extract path parameters.
+
+**Root cause:** FastAPI inspects route handler function signatures via `inspect.signature` and passes each parameter to Pydantic for validation. Any parameter that looks unusual (leading underscore, `**kwargs`) breaks the introspection or the validation layer.
+
+**Solution:** Closure capture. At the top of `_register_content_type(cfg)`, all config values are captured as local variables (`model = cfg.model`, `item_id = cfg.item_id_param`, etc.). Each inner handler function closes over those locals — zero captured-via-default-param trickery, zero `**kwargs`. Path parameters use `Path(alias=item_id)` where `item_id` is the closure variable, so the URL path reads `/{sop_id}` while the Python parameter is always named `item_id_val`. Result: all 7 handlers look like normal FastAPI functions with normal type-annotated parameters.
+
+**Debugging approach:** Hit the Pydantic underscore error first, tried renaming to `cfg_` (still failed on a different field), then realized the issue was FastAPI treating the parameter as a request body field — switched to closure capture. Hit `**kwargs` limitation second when trying to forward the path parameter name dynamically; fixed by using `Path(alias=...)` which lets the URL segment name differ from the Python identifier. Ran `ruff` after each attempt; one additional fix was changing `from typing import Callable` to `from collections.abc import Callable` (Ruff UP035).
+
 ### Supabase keep-alive workflow: silent HTTP failures
 
 **Problem:** A cron workflow to prevent Supabase free-tier pausing failed silently — the logs showed "ping failed" but no HTTP status code, making it impossible to diagnose whether the issue was bad keys, wrong URL, or a network problem.
@@ -343,3 +435,8 @@ Key technical decisions:
 - **Optimistic UI as a mandatory convention** -- All mutations use TanStack Query `onMutate` to update the cache before the server responds. Failed mutations show inline error state with retry. Codified in CLAUDE.md and UX guidelines skill so the pattern is enforced on every future feature
 - **Scenario gate as the primary commit gate** -- Browser-level Playwright specs that walk real cross-role journeys against a live API + dev Supabase, wired into `/commit-smart` as a preflight. Unit tests and component tests are still required, but a red scenario gate blocks shipping. Principle: one object through its full lifecycle, not N objects at surface depth. Every new cross-role feature ships with its own scenario before it's "done"
 - **Flat-table UI pattern over card-wrapped lists** -- List pages sit directly on the page background with hairline row dividers + uppercase tracking column headers + CSS Grid alignment. Cards reserved for genuine summary tiles and chat-pane chrome. Applied across 10+ director / team / analytics surfaces so the visual language stays consistent
+- **Demo rebuild as one-command orchestration** -- `scripts/demo-rebuild.sh [local|staging|prod]` chains wipe → baseline seed → YAML-fed overlay → gate (local) or health check (staging/prod). Per-env safety is layered: staging is allow-listed to one Supabase project ref with an interactive "WIPE STAGING" typeback; prod required a triple-barrier guard (date-rotated env var, explicit confirm phrase, row-count typeback) and was used exactly once then deleted from the tree. Narrative data lives as YAML fixtures so the demo story can shift without editing Python
+- **Test-seam endpoints gated by env flag** -- regression specs need to simulate abnormal runtime state (e.g., lost session handles) without actually restarting the API. `AVELLANA_TEST_SEAMS=1` at server boot mounts `/internal/testing/...` routes; the env var is set on local dev and staging, never on production. One module (`internal_testing.py`), one import, zero impact on the prod binary
+- **Structured editors over raw JSON textareas** -- directors never see raw JSON. `RubricCriteriaEditor`, `PolicyTiersEditor`, and `KeyValueEditor` are controlled components with no local state (value + onChange only), dropped in as replacements for `JsonField`. The old `JsonField` remains for the super-admin escape hatch (org advanced settings) where the schema is intentionally open-ended
+- **Content route factory via closure capture** -- `_register_content_type(cfg)` in `content.py` generates all 7 standard endpoints per resource type using closure capture (not default-parameter injection or `**kwargs`). `Path(alias=item_id)` separates the URL segment name from the Python identifier, satisfying both FastAPI's introspection and each resource's naming convention
+- **Observability with zero production overhead when off** -- Sentry integration no-ops when `SENTRY_DSN` is empty so local dev stays offline. Budget gate is disabled by `BUDGET_CHECK_ENABLED=false` for tests and emergencies. Structured JSON logger reads ContextVars via a filter so `request_id`/`user_id`/`session_id` appear on every record without per-log-call plumbing. `X-Request-Id` header echoed on every HTTP response so a single ID correlates the full lifecycle of a simulation across API + WebSocket + pgmq worker

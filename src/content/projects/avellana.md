@@ -3,10 +3,10 @@ title: Avellana
 slug: avellana
 description: Multilingual hospitality training platform with realtime AI voice simulations powered by Gemini Live native audio, multi-tenant content management, and five role-specific frontend experiences (trainee, supervisor, director, admin, super-admin). Built as a monorepo with Next.js, FastAPI, Supabase, and Terraform IaC.
 date_started: 2026-03-25
-date_completed: 2026-04-20
-active_hours: 62
-sessions: 32
-total_prompts: 75
+date_completed: 2026-04-21
+active_hours: 69
+sessions: 31
+total_prompts: 76
 tech_stack:
   - Next.js 15
   - TypeScript
@@ -30,9 +30,9 @@ tech_stack:
   - TanStack Query
   - uv
 platform: Web
-lines_of_code: 133654
-files: 1244
-commits: 282
+lines_of_code: 80187
+files: 797
+commits: 283
 status: in-progress
 hidden: true
 cover_image: /images/projects/avellana/cover.png
@@ -52,7 +52,7 @@ tags:
 
 ## Summary
 
-Avellana is a multilingual hospitality training platform that uses realtime AI voice simulations to help hotel and service teams practice guest interactions. Built as a monorepo across ~30 active hours and 16 sessions, it includes a Next.js 15 frontend, FastAPI backend, Supabase-powered multi-tenant data model, and a voice simulation pipeline built on Google Gemini 2.5 Flash Native Audio (Live) — a single model that handles ASR, LLM, and TTS over one WebSocket. Async post-session evaluation runs on Anthropic Claude Sonnet 4.6 with prompt caching. Infrastructure is fully codified with Terraform + HCP Terraform across dev/staging/prod environments.
+Avellana is a multilingual hospitality training platform that uses realtime AI voice simulations to help hotel and service teams practice guest interactions. Built as a monorepo across 69 active hours and 31 sessions over 27 calendar days, it includes a Next.js 15 frontend, FastAPI backend, Supabase-powered multi-tenant data model, and a voice simulation pipeline built on Google Gemini 2.5 Flash Native Audio (Live) — a single model that handles ASR, LLM, and TTS over one WebSocket. Async post-session evaluation runs on Anthropic Claude Sonnet 4.6 with prompt caching. Infrastructure is fully codified with Terraform + HCP Terraform across dev/staging/prod environments.
 
 ## Features
 
@@ -178,6 +178,7 @@ Key requests that drove the build, in order:
 73. **Prod verification + UX audit housekeeping** — "let's do #1 and #2 from the housekeeping list" — confirmed CI green on avellana.digital, ran /ux-guidelines on all three new editor components, applied three touch-target and mobile-layout fixes
 74. **Feedback page visual redesign** — "i Like the 3-5 point scale of the rubrics, and the way these are shown right after a sim happens. please use this way of presenting information, make it narrower to a single column and replace the detailed feedback section on this screen" (shared screenshot of EvalResultScreen and FeedbackSummaryPage side by side)
 75. **Conversation timeline fix** — "the color-coded conversation bar does not seem very accurate. specifically, diego spoke for longer than 1 second and it should show the colors intertwined, depending on who spoke when during the conversation"
+76. **Tab-switch reload fix** — "Avellana keeps showing me the hazelnut loading animation every time I switch tabs. it should never reload on its own"
 
 ## Raw Prompts
 
@@ -262,6 +263,8 @@ Substantive user messages from the conversation, preserving original wording:
 > "i Like the 3-5 point scale of the rubrics, and the way these are shown right after a sim happens. please use this way of presenting information, make it narrower to a single column and replace the detailed feedback section on this screen"
 
 > "the color-coded conversation bar does not seem very accurate. specifically, diego spoke for longer than 1 second and it should show the colors intertwined, depending on who spoke when during the conversation"
+
+> "Avellana keeps showing me the hazelnut loading animation every time i switch tabs, etc. it should never reload on its own. can you please figure out what's going on?"
 
 ## Technical Challenges
 

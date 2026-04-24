@@ -3,10 +3,10 @@ title: Avellana
 slug: avellana
 description: Multilingual hospitality training platform with realtime AI voice simulations powered by Gemini Live native audio, multi-tenant content management, and five role-specific frontend experiences (trainee, supervisor, director, admin, super-admin). Built as a monorepo with Next.js, FastAPI, Supabase, and Terraform IaC.
 date_started: 2026-03-25
-date_completed: 2026-04-21
-active_hours: 69
-sessions: 31
-total_prompts: 76
+date_completed: 2026-04-24
+active_hours: 71
+sessions: 32
+total_prompts: 81
 tech_stack:
   - Next.js 15
   - TypeScript
@@ -30,9 +30,9 @@ tech_stack:
   - TanStack Query
   - uv
 platform: Web
-lines_of_code: 80187
-files: 797
-commits: 283
+lines_of_code: 83778
+files: 575
+commits: 317
 status: in-progress
 hidden: true
 cover_image: /images/projects/avellana/cover.png
@@ -86,6 +86,8 @@ Avellana is a multilingual hospitality training platform that uses realtime AI v
 - **Content route factory** -- `apps/api/app/routes/content.py` refactored from 1334 to 850 lines via a `_register_content_type(cfg)` closure that generates all 7 standard endpoints per resource. Closure capture (local variables at top of function) sidesteps Pydantic's leading-underscore rejection; `Path(alias=item_id)` maps path parameters to their resource-specific names without `**kwargs`
 - **Feedback page redesign** -- `/feedback/[sessionId]` replaced the two-column "Detailed Feedback" card layout (large percentage numbers) with the single-column per-criterion progress-bar style from the post-sim result screen (`score / max_score` + progress bar + feedback text). Conversation timeline bar now renders one segment per transcript turn in chronological order (interleaved blue/gray pattern) instead of stacking all trainee time then all AI time
 - **Wave 3 scenario gate** -- 9 new Playwright specs (6 per-role smoke structure-only, 1 end-to-end journey with Gemini Live + Claude evaluator mocked, 2 regression specs locking in multi-policy grounding and session-end fallback) plus a `withConsoleCapture(test)` fixture that fails the test on any unmatched `console.error` or `pageerror`. Allowlist entries require a human-readable `reason` field
+- **Trainee leaderboard** -- replaces the old `/progress` skills-and-completion view at `/leaderboard`. New `GET /api/v1/trainee/leaderboard?period=week|month|year` endpoint returns two ranked views: `overall` (each user's single best score across all sims in the period) and `bySimulation` (per-sim rankings for every simulation the current trainee attempted). Standard skip-ranking handles ties. Every row carries `isMe`. Frontend has period tabs, gold/silver/bronze rank badges, green/amber/red score chips, and a primary-tinted highlight on the current user's row. 10 new API tests plus domain contract tests plus a Scenario 20 extension that asserts the contract on real seeded data
+- **"One active simulation per user" product rule, enforced at three layers** -- a given `(user_id, simulation_id)` pair cannot appear on more than one non-archived assignment. Service layer (`create_assignment` and `add_recipients`) filters out users who already have a non-archived assignment for the simulation. DB layer adds a denormalized `simulation_id` column on `assignment_recipients` populated by a `BEFORE INSERT` trigger plus a partial unique index on `(user_id, simulation_id)` — catches any seed script or raw-SQL path that bypasses the API. Cleanup script dedupes existing rows (kept the most-recent non-archived, deleted the rest plus orphaned parent assignments). Fired in production: dropped 30 duplicate recipients plus 24 orphan assignments, taking Diego's dashboard from 24 rows to 4 unique assigned simulations
 
 ## How It Was Built
 
@@ -179,6 +181,11 @@ Key requests that drove the build, in order:
 74. **Feedback page visual redesign** — "i Like the 3-5 point scale of the rubrics, and the way these are shown right after a sim happens. please use this way of presenting information, make it narrower to a single column and replace the detailed feedback section on this screen" (shared screenshot of EvalResultScreen and FeedbackSummaryPage side by side)
 75. **Conversation timeline fix** — "the color-coded conversation bar does not seem very accurate. specifically, diego spoke for longer than 1 second and it should show the colors intertwined, depending on who spoke when during the conversation"
 76. **Tab-switch reload fix** — "Avellana keeps showing me the hazelnut loading animation every time I switch tabs. it should never reload on its own"
+77. **Leaderboard feature** — "continue with the leaderboard implementation" (after a kanban-level spec was written; led to the full-stack leaderboard build)
+78. **Leaderboard URL rename** — "please change the url to /leaderboard instead of /progress"
+79. **Demo richness seed** — "create 8 more trainee employees, with seed data as if they had taken just 2 random simulations each. i want to see a fuller leaderboard. make sure they have realistic-looking names and simulation data like the others"
+80. **One-sim-per-person rule** — "please enforce both in code, and in existing data that a simulation can only be assigned to a person once. so there should never be any duplicates here" (with a dashboard screenshot showing "Room Was Dirty at Check-in" repeated 6+ times)
+81. **Docker port collision resolution** — chose `docker stop sereno-dashboard` over a permanent port change in the Playwright scenarios config, to avoid baking a 3020-port workaround into test infra
 
 ## Raw Prompts
 
@@ -265,6 +272,14 @@ Substantive user messages from the conversation, preserving original wording:
 > "the color-coded conversation bar does not seem very accurate. specifically, diego spoke for longer than 1 second and it should show the colors intertwined, depending on who spoke when during the conversation"
 
 > "Avellana keeps showing me the hazelnut loading animation every time i switch tabs, etc. it should never reload on its own. can you please figure out what's going on?"
+
+> "continue with the leaderboard implementation"
+
+> "can you please change the url to /leaderboard instead of /progress?"
+
+> "also, can you please create 8 more trainee employees, with seed data as if they had taken just 2 random simulations each. i want to see a fuller leaderboard. make sure they have realistic-looking names and simlation data like the others."
+
+> "please enforce both in code, and in existing data that a simulation can only be assigned to a person once. so there should never be any duplicates here"
 
 ## Technical Challenges
 
@@ -416,6 +431,36 @@ Substantive user messages from the conversation, preserving original wording:
 
 **Debugging approach:** Hit the Pydantic underscore error first, tried renaming to `cfg_` (still failed on a different field), then realized the issue was FastAPI treating the parameter as a request body field — switched to closure capture. Hit `**kwargs` limitation second when trying to forward the path parameter name dynamically; fixed by using `Path(alias=...)` which lets the URL segment name differ from the Python identifier. Ran `ruff` after each attempt; one additional fix was changing `from typing import Callable` to `from collections.abc import Callable` (Ruff UP035).
 
+### Enforcing "one simulation per person" across three layers
+
+**Problem:** The trainee dashboard was showing the same simulation ("Room Was Dirty at Check-in") repeated 21 times for one user. Aesthetically obvious, but the deeper question was where the rule should live — at the API, at the DB, or both — and how to clean up the mess that had already accumulated without accidentally deleting legitimate data.
+
+**Root cause:** The schema puts `simulation_id` on the `assignments` table and `user_id` on the child `assignment_recipients` table. Postgres unique constraints cannot span tables, so a single DB constraint could not express the rule directly. The API layer had no check either — `create_assignment` happily inserted a new assignment row for a `(user, sim)` pair that already had one. Seed scripts and the demo-rebuild loop had been running creating fresh assignments each time, never deduping, so Diego accumulated 21 duplicates over successive reseeds.
+
+**Solution:** Defense in depth across three layers. **(1) API:** added `_filter_users_without_active_sim_assignment` in the assignment service that drops users already holding a non-archived assignment for the simulation being assigned. Called from both `create_assignment` and `add_recipients`. The parent Assignment row still persists (audit trail survives even with zero effective recipients). **(2) DB:** a migration adds a denormalized `simulation_id` column on `assignment_recipients`, backfilled from parents, and kept in sync by a `BEFORE INSERT` trigger that copies the parent's `simulation_id` if the row doesn't specify one. A partial unique index on `(user_id, simulation_id) WHERE simulation_id IS NOT NULL` enforces the rule regardless of whether the insert path went through Python. **(3) Data cleanup:** a standalone Python script groups recipients by `(user_id, simulation_id)`, keeps the most-recent non-archived one per pair, deletes the rest, then deletes any parent assignments that became orphaned as a result (using `WHERE id = ANY($1)` so it only touches the assignments the dedup touched — no risk of sweeping up legitimate empty DEPARTMENT/ALL_PROPERTY assignments). Idempotent, transactional, safe to re-run.
+
+**Debugging approach:** Started with a quick `GROUP BY ... HAVING COUNT(*) > 1` against `assignment_recipients` joined to `assignments` — found 3 duplicate pairs holding 33 duplicate rows total. Confirmed via a fresh asyncpg insert that the new DB constraint fires as expected (`UniqueViolationError: duplicate key value violates unique constraint "uniq_assignment_recipient_user_simulation"`). Wrote two new unit tests mocking the service-level filter — both paths (create + add), both executed against the `_Stub` session pattern the rest of the assignment_service tests use. The dashboard went from 24 rows with 21 duplicates to 4 unique rows.
+
+### Three-period leaderboard from one query
+
+**Problem:** The leaderboard needs two different ranked views from the same underlying data: an "overall" table ranking each user by their single best score across all simulations in the period, and a "per-simulation" table for every simulation the current trainee attempted showing all teammates who also ran it. Naive implementation = separate API calls for overall and per-sim, or separate queries for each sim. Either way, N+1 territory.
+
+**Root cause:** Not a bug — a design question about where to split the work between SQL, Python, and the frontend.
+
+**Solution:** One property-scoped query loads all COMPLETED sessions in the period plus their COMPLETED evaluations. Python reduces them to a `(user_id, sim_id) -> [scores]` dict. From that one dict, two views fall out: for `overall`, group by user, take max across all sims, sort desc, apply standard skip-ranking with `rank += 1 + skip`. For `bySimulation`, filter to sims the current user attempted (`my_sim_ids`), iterate each, apply the same ranking logic within each sim's rows. Zero extra DB calls. Period boundaries are computed from one naive UTC datetime matched to the `TIMESTAMP WITHOUT TIME ZONE` column on `simulation_sessions` (Postgres rejects tz-aware binds on naive columns via asyncpg's `DataError`).
+
+**Debugging approach:** First attempt passed a tz-aware UTC datetime; asyncpg threw `can't subtract offset-naive and offset-aware datetimes` on the bind. Stripped the tzinfo for the query, kept it UTC in Python for the calendar anchor math. Standard ranking was unit-tested with a tie case (Diego and Isabella both scored 87, both get rank 2, next user correctly jumps to rank 4). Verified live against the shared staging DB with 10 trainees on Diego's property: year view returns all 10 correctly ordered, week view returns 8 (two users whose most-recent session fell outside the 7-day window).
+
+### Docker port collision: the scenario gate's "/login 404" mystery
+
+**Problem:** Running the scenario gate as part of Definition of Done, every single login-requiring spec failed the same way: `/login` returned 404. The tests passed their route smoke checks (`/dashboard`, `/simulations`, etc.) but every `loginAs(...)` call timed out.
+
+**Root cause:** Playwright's scenarios config has `reuseExistingServer: !process.env.CI` — if something already responds on port 3000, Playwright assumes the frontend dev server is up and skips spawning one. But port 3000 was actually being held by a `sereno-dashboard` Docker container from an unrelated project, serving FastAPI's `{"detail":"Not Found"}` on every path. Playwright was sending its tests to the wrong server.
+
+**Solution:** Attempted first to move the scenarios config to port 3020. That worked past the 404 but hit a CORS wall — the API's `.env.development` whitelists only 3000 and 3010. Fixing that would have meant editing `.env.development` (against project rules) plus baking a non-standard port into permanent test infra. Reverted, asked the user to `docker stop sereno-dashboard` for the 3 minutes the gate takes to run, then `docker start sereno-dashboard` after. Trivially reversible.
+
+**Debugging approach:** Started with `curl -sv http://localhost:3000/login` — the `server: uvicorn` header in the response was the tell (Next.js never sends that header). Then `lsof -iTCP:3000 -sTCP:LISTEN -P` showed `com.docker` holding the port, and `docker ps --format "table {{.Names}}\t{{.Ports}}"` revealed the culprit. The PM lesson that made it into the course case study: *"When an infrastructure workaround starts requiring config changes in three places, the workaround is worse than the original problem. Revert, ask for the one human action that solves it cleanly, move on."*
+
 ### Supabase keep-alive workflow: silent HTTP failures
 
 **Problem:** A cron workflow to prevent Supabase free-tier pausing failed silently — the logs showed "ping failed" but no HTTP status code, making it impossible to diagnose whether the issue was bad keys, wrong URL, or a network problem.
@@ -443,3 +488,4 @@ Key technical decisions:
 - **Structured editors over raw JSON textareas** -- directors never see raw JSON. `RubricCriteriaEditor`, `PolicyTiersEditor`, and `KeyValueEditor` are controlled components with no local state (value + onChange only), dropped in as replacements for `JsonField`. The old `JsonField` remains for the super-admin escape hatch (org advanced settings) where the schema is intentionally open-ended
 - **Content route factory via closure capture** -- `_register_content_type(cfg)` in `content.py` generates all 7 standard endpoints per resource type using closure capture (not default-parameter injection or `**kwargs`). `Path(alias=item_id)` separates the URL segment name from the Python identifier, satisfying both FastAPI's introspection and each resource's naming convention
 - **Observability with zero production overhead when off** -- Sentry integration no-ops when `SENTRY_DSN` is empty so local dev stays offline. Budget gate is disabled by `BUDGET_CHECK_ENABLED=false` for tests and emergencies. Structured JSON logger reads ContextVars via a filter so `request_id`/`user_id`/`session_id` appear on every record without per-log-call plumbing. `X-Request-Id` header echoed on every HTTP response so a single ID correlates the full lifecycle of a simulation across API + WebSocket + pgmq worker
+- **Cross-table uniqueness via denormalization + trigger** -- when a uniqueness rule spans two tables (assignment_recipients.user_id + assignments.simulation_id), Postgres cannot express it as a single unique constraint. Pattern used here: denormalize the parent's column onto the child, maintain with a `BEFORE INSERT` trigger, then add a partial unique index on the child. Belt-and-suspenders with an application-level filter on the service layer. Seed scripts and raw-SQL paths get caught by the index even if they bypass the API

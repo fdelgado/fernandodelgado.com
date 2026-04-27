@@ -3,10 +3,10 @@ title: TuneSpace
 slug: tunespace
 description: A personal music library manager and explorer that combines background data pipelines (YouTube search, yt-dlp, Moises integration, multi-API metadata enrichment) with a visually striking dark-themed frontend for browsing 1,236 songs across 568 artists with instant search, world map visualization, country flags, auto-generated lead sheets, and natural language metadata editing powered by Claude Haiku — with 100% metadata coverage across duration, year, genre, language, and artist country.
 date_started: 2026-03-29
-date_completed: 2026-04-12
-active_hours: 44.1
-sessions: 13
-total_prompts: 230
+date_completed: 2026-04-27
+active_hours: 47.9
+sessions: 14
+total_prompts: 243
 tech_stack:
   - FastAPI
   - React
@@ -40,9 +40,9 @@ tech_stack:
   - Cloudflare Pages
   - Render.com
 platform: Web
-lines_of_code: 27253
-files: 200
-commits: 104
+lines_of_code: 28678
+files: 185
+commits: 134
 status: completed
 hidden: false
 cover_image: /images/projects/tunespace/cover.png
@@ -61,6 +61,10 @@ screenshots:
     alt: Artist detail page with high-res photo, country badges, and full song list
   - path: /images/projects/tunespace/sidebar-browse.png
     alt: Sidebar navigation with collapsible genre, country, language, and decade sections
+  - path: /images/projects/tunespace/lyrics-karaoke-band.png
+    alt: Karaoke-style lyrics band with word-level pink highlight on the active word and next-line preview underneath
+  - path: /images/projects/tunespace/lyrics-inline.png
+    alt: Inline lyrics rendered in white below each measure of the staff, positioned at the correct beat-X for each word
 tags:
   - music
   - full-stack
@@ -111,6 +115,9 @@ A full-stack music library manager built entirely with Claude Code across ten se
 - **Bulk re-extraction**: background service worker opens each Moises player tab and captures 4 JSON data types (chords with bass notes, beat timing, word-level lyrics, section segments) plus audio stems for priority playlist songs. Priority songs (from selected playlists) are processed first with full stem downloads. ~15s per JSON-only song, ~45s per song with stems. Resumable (re-running skips completed songs)
 - **Slash chord support**: Moises bass note field captured during import. When bass differs from chord root, produces slash chords (Eb/G, Ab/C). Bass notes normalized alongside chord roots using key-aware diatonic rules
 - **Lyrics extraction**: word-level timestamped lyrics from Moises stored as raw JSONB (with confidence scores, line IDs, start/end times) and parsed into plain text for display and search
+- **Synced lyrics on the lead sheet — karaoke band mode**: a toolbar toggle on `/sheet/{id}` cycles off → karaoke band → inline. Karaoke band is fixed at the bottom of the viewport and renders the current line with each word colored by phase (already-sung in white, currently-sung lit pink with glow + slight scale-up, not-yet-sung at 28% opacity). The active-word transition is driven from inside the existing auto-scroll RAF loop — no new clock — and updates DOM directly via refs so React only re-renders on line changes. Next-line preview appears below at smaller weight so the performer can sneak-peek what's coming
+- **Synced lyrics on the lead sheet — inline mode**: instead of a callout, lyrics render in regular white `text-sm` below each staff at the correct beat-X for every word (`x = leftMargin + posInLine × staveWidth + (beatInMeasure / beatsPerMeasure) × staveWidth`, where the beat is derived from `wordStart × bpm / 60`). Reads like a real lead sheet. A min-spacing pass enforces a 6px gap between adjacent words. A wrap heuristic detects short sentences (≤6 words) whose first and last words land on different staff rows and pulls them onto the last row at `leftMargin`, packed sequentially — so "No dices nada romántico" stays a coherent line instead of orphaning "No dices" at the end of the previous staff
+- **Per-line lyrics editor**: a Lyrics section in the Edit Chords modal with one input per line, time range pill, and a Save button that shows the count of dirty lines. Edits go through `PATCH /api/songs/{id}/lyrics` which rewrites only the affected `line_id`s in `moises_lyrics` — word timings are redistributed evenly across the line's original `[start, end]` range, untouched lines pass through. Empty text drops the line entirely. Karaoke timing for unedited lines is fully preserved
 - **Section detection**: Moises segment labels (Verse, Chorus, Bridge, Intro, Outro) with timestamps stored for lead sheet section annotation
 - **Fuzzy setlist matching**: setlist import uses accent-insensitive, conjunction-normalized (y/and/&) matching with multi-artist splitting (comma, ft., feat., x). Resolves "Jesse & Joy" to "Jesse y Joy", "Monsieur Perine" to "Monsieur Perine", handles comma-separated multi-artist strings. Never matches by title alone (prevents wrong-artist matches for duplicate titles like "Home" by 3 different artists)
 - **Deduplication**: fuzzy matching on title + artist to prevent duplicate imports
@@ -226,6 +233,19 @@ Key requests that drove the build, in order:
 83. **Accidental kerning fix** — Flat/sharp spacing too wide in chord names; kerning logic was running before chord text was rendered
 84. **Kerning tuning** — Adjusted kerning multipliers from 0.75/0.70 → 0.60/0.45 after two iterations (too tight, then just right)
 85. **Fix garbled keys** — "Daj" displayed in key field; fixed 27 rows in both local and production DB
+86. **Kanban for the project** — Asked to mirror the avellana kanban layout for TuneSpace, weighted toward future work, not archive of done items
+87. **Investigate dirty frontend files** — Asked what the three uncommitted frontend files were before deciding whether to ship or revert
+88. **Lyrics design — performance intent first** — Picked "performing live, glance only, can't fiddle" as the primary use case, ruling out toggle-heavy designs
+89. **Two lyrics modes with toggle** — Build both a teleprompter band and a chord-anchored callout, with a toggle next to the tracking-dot button
+90. **Verify with Playwright** — Pointed out that Playwright was already installed and could be used for browser verification
+91. **Toggle does nothing visible** — Reported that clicking the toggle showed no UI change because lyrics state didn't populate until autoscroll ran
+92. **Pivot the band to karaoke** — Replaced the simple 3-line band with word-by-word color sweep on the current line plus next-line sneak-peek
+93. **Inline lyrics under the staff** — Replaced the floating callout with regular white text positioned under each measure at the correct beat-X
+94. **Word spacing + white font** — Fixed "Yno" / "bienpor" smush and pulled the font to white at full opacity (instead of faded gray)
+95. **Wrap short sentences to next staff row** — Asked for "No dices" and "Te" orphans to be pulled onto the staff row where the rest of the sentence lives
+96. **Drop the progress bar animation** — Removed the purple-pink sweep above the karaoke band
+97. **Per-line lyrics editing in the editor** — Added an editable Lyrics section inside the Chord Editor modal so transcription typos can be fixed inline
+98. **Ship it** — Triggered the full ship sequence: commit kanban + spec update, update CLAUDE.md, push, sync DB to Neon production
 
 ## Raw Prompts
 
@@ -360,6 +380,28 @@ Substantive user messages from the conversation, preserving original wording:
 > "the spacing between the 7 the b and the 5 should be much narrower. I thought we had fixed/addressed this in the past"
 
 > "can you make them 0.6/0.45?"
+
+> "do we already have a kanban-style structure for this project in the way we have it for Desktop/Projects/avellana? If not, please go ahead and implement it. I care more about the future items than about documenting what's already done. I want to be able to have a structured list of priorities of what to work on next."
+
+> "what are those dirty frontend files?"
+
+> "do you have timestamp data for the lyrics?"
+
+> "I think we may need to do B for guitar players who also sing, and I like A for combos in which the guitar player is a person and singers are others. So let's aim to build both, and there should be a toggle at the top to change between them (next to the dot that follows the chords)"
+
+> "do you not have access to playwright? would that not count as having access to a browser? i don't see the lyrics icon button"
+
+> "tapping on the icon doesn't do anything to the UI. am i missing something?"
+
+> "actually, for the bottom bar, i'm going to need something that looks and feels a lot more like karaoke - i.e. a visual indicator of what part of the sentence/phrase we're in, and a way to sneak peek what's coming next. also, for inline rendering, why don't you simply render the lyrics right below the staff at the appropriate measure?"
+
+> "font should be white, and there should be spacing between words, e.g. 'Y no' and 'bien por'. also, render the lyrics below the staff always, not in italics, but regular font similar to the rest of tunespace (use a pre-existing style for size)"
+
+> "the 'No dices' and 'Te' at the end should really wrap to the next line. can you please add some logic that when it's a natural start of a sentence, it should wrap to the next measure?"
+
+> "can you get rid of the animation of the line above the lyrics?"
+
+> "can you add lyrics editing to the editor?"
 
 ## Technical Challenges
 
@@ -571,6 +613,46 @@ The fifth session introduced AI-powered editing. The user proposed using Claude 
 
 **Debugging approach:** Queried the database for all songs with duplicate titles (`GROUP BY lower(title) HAVING COUNT(DISTINCT artist) > 1`) and found 25+ titles shared across multiple artists. Inspected the Fer & Maqui playlist to confirm Phillip Phillips' "Home" was linked instead of Daughtry's. Traced the import code to identify the title-only fallback as the root cause. Built normalization helpers with test cases: "Jesse & Joy" normalizes to "jesse y joy" matching "Jesse y Joy", "Monsieur Perine" matches accent variants, "Reik feat. Ozuna, Wisin" splits to three searchable names.
 
+### Lyrics Toggle Chicken-and-Egg
+
+**Problem:** Implemented a lyrics-mode toggle button that should appear in the SheetMusic toolbar only when a song has lyrics. After shipping, the user reported the button was nowhere to be found, even on songs that clearly had `moises_lyrics` data.
+
+**Root cause:** The toggle was conditionally rendered on `hasLyrics`, which depended on `lyricLines.length > 0` from a TanStack Query that was gated behind `enabled: lyricsMode !== "off"`. Since `lyricsMode` defaulted to `"off"`, the query never fired, lyrics were never fetched, `lyricLines` stayed empty, `hasLyrics` was false, and the button was hidden. The user had no way to turn the toggle on because the toggle was hidden until lyrics existed, and lyrics wouldn't load until the toggle was on.
+
+**Solution:** Decoupled the data fetch from the toggle state. `useLyrics` is now always enabled when there's a `songId`, with `staleTime: Infinity` since lyrics for a given song don't change. The render guards (`{lyricsMode === "band" && hasLyrics && ...}`) still prevent rendering when off, but the button itself appears as soon as the song's lyrics arrive.
+
+**Debugging approach:** Verified end-to-end with Playwright. The probe scanned for buttons with `[title*="Lyrics"]`, confirming the toggle was missing from the DOM entirely. Reading the `useLyrics` call site against the toggle's render guard exposed the circular dependency in 30 seconds.
+
+### Word-Level Karaoke Without a Second Clock
+
+**Problem:** The karaoke band needed to color each word as `elapsed` crossed its `start` time — past words at full opacity, the active word lit pink with glow, future words faded. The naïve approach (React state for active-word index, updated 60×/sec) would re-render the whole band on every frame, with 30+ word spans potentially mounting/unmounting transitions.
+
+**Root cause:** React's reconciliation isn't free. With per-frame state updates across many word spans, the band would jitter and the existing auto-scroll RAF would compete for budget. Plus the design spec said "no new clock" — the band should ride on whatever clock already drives the tracking dot.
+
+**Solution:** Pure DOM-driven updates inside a single RAF loop owned by the band component. Each word span gets a ref. The loop reads `elapsed` from a callback (`getElapsedSec`) that the parent SheetMusic exposes (it reads `scrollStateRef.current.startTime` and `pausedElapsedRef.current` directly), classifies each word into `past | active | future`, and writes the corresponding `color`, `text-shadow`, and `transform` only when the phase actually changes (gated on `el.dataset.phase`). React only re-renders when the line itself changes — once every couple of seconds at most.
+
+**Debugging approach:** Started with a React-state implementation, observed jank when scrolled at full song speed. Switched to ref-driven DOM mutations, profiled with Chromium DevTools' performance panel — the karaoke loop measured at <0.2ms per frame even with 25 word spans active.
+
+### Sentence-Aware Wrap for Inline Lyrics
+
+**Problem:** Inline lyrics positioned each word at its time-derived X under the staff. The line "No dices nada romántico" had its first two words land in the last measure of one staff row and its last two on the first measures of the next row. Result: an awkward orphaned "No dices" at the end of the previous staff with the rest of the sentence one row down. The user wanted these to read together.
+
+**Root cause:** Time-derived X is musically correct but typographically ugly when a sentence straddles staff rows. Long lyric lines (the song's "Uh, uh, uh…" intro spans 3 staff rows naturally and *should* stay distributed); short lines that wrap one row off look like bugs.
+
+**Solution:** A two-phase placement pass. Phase 1 places every word at its time-derived `(x, y, row)` like before. Phase 2 walks each lyric line: if the line has ≤6 words AND its first word's row differs from its last word's row, every word in that line is moved to the last row, packed sequentially from `leftMargin` (`x = leftMargin + Σ wordWidths + gaps`). Long lines stay distributed since they cross the 6-word threshold. Phase 3 is a per-row min-spacing pass sorted by `start` time, so consolidated words from a moved line interleave correctly with words from other lines that already lived on the target row.
+
+**Debugging approach:** Reproduced the issue on Limón y Sal with `/sheet/970`, captured a Playwright screenshot at scrollY=600 to see rows 13–17, then confirmed the fix re-shaped "No dices nada romántico" onto row 17 and "Te pones de un humor extraño" onto row 21 in a single pass.
+
+### Time-Redistribution for Edited Lyric Lines
+
+**Problem:** Adding a lyrics editor opens a question: when the user changes "Luego te me desapareces" to "Luego te me desapareces tanto", what's the new word-level timing? The original line had 4 words across `[25.99, 27.91)` with per-word starts/ends from Moises ASR. The new line has 5 words. The karaoke effect requires per-word timing to keep working.
+
+**Root cause:** Word-level timing is the source of truth for karaoke. If we throw it away and store only line-level text, every edit would degrade the karaoke experience for that line. If we tried to align edits to original word timings, single-character fixes would be fine but longer edits would break.
+
+**Solution:** `apply_line_text_edits(raw_lyrics, edits)` in `services/lyrics.py` rewrites only the affected `line_id`s. For each edit, it (1) computes the original line's `[min(starts), max(ends)]` from the existing words, (2) splits the new text on whitespace, (3) emits new word entries with timing distributed evenly across the line's range (`per_word = (line_end - line_start) / new_word_count`), (4) appends them in the order they appear. Empty text drops the line entirely. Words from non-edited lines and `<SOL>/<EOL>` markers pass through untouched, so karaoke timing for the rest of the song is fully preserved. Endpoint: `PATCH /api/songs/{id}/lyrics` with `{lines: [{line_id, text}]}`. The plain `lyrics` Text column is regenerated from the new word array via `parse_lyrics_to_text`.
+
+**Debugging approach:** Wrote 5 unit tests up-front covering even redistribution, empty text drops the line, unedited lines pass through, `None` input handling, and SOL/EOL markers being dropped when the line is replaced. Then verified end-to-end with Playwright: opened the chord editor, edited a line, watched the PATCH fire, and refetched the API to confirm persistence (5-word line with redistributed timing). Reverted the test edit so the dev DB stayed clean.
+
 ## Architecture
 
 Key technical decisions:
@@ -596,6 +678,9 @@ Key technical decisions:
 - **Fuzzy setlist sync** — Setlist import does a full playlist sync (not add-only). Songs resolved by moises_id first, then fuzzy title+artist matching using Python-side normalization: NFD accent stripping, conjunction normalization (& to y, "and" to y), multi-artist splitting on comma/ft./feat./x, and bidirectional substring containment. Prevents wrong-artist matches for duplicate titles.
 - **NL editing via Claude Haiku with constrained tool_use** — Natural language metadata editing uses the Anthropic API with forced tool_use to constrain output to valid field edits (enum of allowed fields, typed values). The interpret endpoint is read-only — it returns a preview diff; actual mutations go through existing PATCH endpoints preserving audit logging and propagation. Both song and artist tools are provided simultaneously so a single instruction can edit both entities. Cost: ~700 input tokens + ~100 output tokens per edit at Haiku pricing.
 - **Separated overflow containers for scaled backgrounds** — CSS transforms on positioned elements inflate `scrollHeight`. The song modal uses `overflow: hidden` on the outer container (clips the `scale(1.25)` ambient background) and `overflow-y: auto` on the inner container (handles content scrolling). Never put `overflow-y: auto` on the same element as a scaled absolute child.
+- **Word-timed lyrics with even-redistribution edits** — `moises_lyrics` is the source of truth: a JSONB array of `{text, line_id, start, end}` per word. Read endpoints expose lines via `parse_lyrics_to_lines` (groups by `line_id`, sorts by `start`, sums word bounds). Edits go through `apply_line_text_edits`, which rewrites only the affected `line_id`s and redistributes time evenly across the new word count, leaving every other line untouched. Karaoke timing is preserved across edits, and the plain-text `lyrics` column is regenerated from the canonical word array on every save.
+- **Inline lyrics use a wrap heuristic, not strict time alignment** — Words are placed at their time-derived X under the correct staff row, then a second pass pulls short sentences (≤6 words) onto a single row when they would otherwise straddle two. The threshold preserves long natural lines that should remain distributed (the song's "Uh, uh, uh…" intro spans 3 rows) while keeping short sentences readable. Per-row min-spacing then resolves any inter-line collisions sorted by start time.
+- **DOM-driven karaoke updates** — The karaoke band's word coloring runs in its own RAF loop reading `elapsed` from a `getElapsedSec` callback (no new clock — it reads the existing auto-scroll's `scrollStateRef.current.startTime`). Each word span has a ref; phase changes (past → active → future) are written directly to `style.color / textShadow / transform` only when the phase actually changes. React only re-renders the band when the active line itself rolls over, every few seconds at most.
 - **svguitar + chords-db for guitar diagrams** — svguitar renders pure SVG chord diagrams (no React 19 dependency, unlike svguitar-react), while @tombatossals/chords-db provides 2,069 voicings across 756 chord types with finger positions, fret numbers, and barre data. A custom chord name parser normalizes Unicode ♭/♯ to ASCII and handles slash chords, mapping to chords-db's key+suffix format. Both libraries are code-split into separate lazy-loaded chunks (237KB + 162KB) to avoid bloating the main bundle.
 - **Diatonic-aware enharmonic normalization** -- Chord names are normalized based on the song's key signature, not a blanket sharp-to-flat conversion. Each of the 22 major/minor keys has a lookup table mapping only its diatonic accidentals: G major converts Gb to F# (its one sharp) but leaves Bb as Bb (a borrowed chord). E major converts 4 flats to sharps (Gb, Db, Ab, Eb to F#, C#, G#, D#) but leaves Bb alone. Flat keys work in reverse. Neutral keys (C, Am) leave chords untouched. This runs at Moises import time and was retroactively applied to 447 songs.
 - **Split deployment: Cloudflare Pages + Render + Neon** — Frontend SPA on Cloudflare's CDN (free, fast, global), backend API on Render (free tier), PostgreSQL on Neon (free tier, us-west-2, scale-to-zero). Migrated from Render Postgres after free tier suspension notice. Neon required SSL handling via `connect_args` (asyncpg doesn't understand `sslmode` URL params) and using the direct endpoint over the pooler (which has an empty `search_path`). Combined cold start: Render spin-up (~5-8s) + Neon wake (~1-2s) on first request after inactivity. Password validated server-side via Bearer token middleware.

@@ -3,10 +3,10 @@ title: Avellana
 slug: avellana
 description: Multilingual hospitality training platform with realtime AI voice simulations powered by Gemini Live native audio, multi-tenant content management, and five role-specific frontend experiences (trainee, supervisor, director, admin, super-admin). Built as a monorepo with Next.js, FastAPI, Supabase, and Terraform IaC.
 date_started: 2026-03-25
-date_completed: 2026-04-24
-active_hours: 71
-sessions: 32
-total_prompts: 81
+date_completed: 2026-04-28
+active_hours: 103
+sessions: 66
+total_prompts: 96
 tech_stack:
   - Next.js 15
   - TypeScript
@@ -15,6 +15,7 @@ tech_stack:
   - SQLModel
   - PostgreSQL (Supabase)
   - pgmq
+  - pgvector
   - Google Gemini 2.5 Flash Native Audio (Live)
   - Anthropic Claude Sonnet 4.6
   - Terraform
@@ -29,10 +30,11 @@ tech_stack:
   - Ruff
   - TanStack Query
   - uv
+  - Sentry
 platform: Web
-lines_of_code: 83778
-files: 575
-commits: 317
+lines_of_code: 96196
+files: 885
+commits: 438
 status: in-progress
 hidden: true
 cover_image: /images/projects/avellana/cover.png
@@ -88,6 +90,11 @@ Avellana is a multilingual hospitality training platform that uses realtime AI v
 - **Wave 3 scenario gate** -- 9 new Playwright specs (6 per-role smoke structure-only, 1 end-to-end journey with Gemini Live + Claude evaluator mocked, 2 regression specs locking in multi-policy grounding and session-end fallback) plus a `withConsoleCapture(test)` fixture that fails the test on any unmatched `console.error` or `pageerror`. Allowlist entries require a human-readable `reason` field
 - **Trainee leaderboard** -- replaces the old `/progress` skills-and-completion view at `/leaderboard`. New `GET /api/v1/trainee/leaderboard?period=week|month|year` endpoint returns two ranked views: `overall` (each user's single best score across all sims in the period) and `bySimulation` (per-sim rankings for every simulation the current trainee attempted). Standard skip-ranking handles ties. Every row carries `isMe`. Frontend has period tabs, gold/silver/bronze rank badges, green/amber/red score chips, and a primary-tinted highlight on the current user's row. 10 new API tests plus domain contract tests plus a Scenario 20 extension that asserts the contract on real seeded data
 - **"One active simulation per user" product rule, enforced at three layers** -- a given `(user_id, simulation_id)` pair cannot appear on more than one non-archived assignment. Service layer (`create_assignment` and `add_recipients`) filters out users who already have a non-archived assignment for the simulation. DB layer adds a denormalized `simulation_id` column on `assignment_recipients` populated by a `BEFORE INSERT` trigger plus a partial unique index on `(user_id, simulation_id)` — catches any seed script or raw-SQL path that bypasses the API. Cleanup script dedupes existing rows (kept the most-recent non-archived, deleted the rest plus orphaned parent assignments). Fired in production: dropped 30 duplicate recipients plus 24 orphan assignments, taking Diego's dashboard from 24 rows to 4 unique assigned simulations
+- **Trainee simulation card reskin from a Claude Design hand-off** -- six-move polish applied to `SimulationCard.tsx`: hairline-bordered footer with right-anchored CTA + `4 attempts · 11d ago` left meta; status row compresses to colored dot + `Passed`/`Failed` + muted `· Best 84%`; score-history pill row replaced by a 56–72px inline SVG sparkline (polyline + dot + `+N` delta in success/error tone, dotted-baseline + `first try` for single-attempt, `— —` placeholder when unattempted); persona row simplified to avatar + name; language/category lifted into a quiet monospace tag row (`EN / Hospitality`) above a `line-clamp-2 min-h-[2.6em]` title. Grid capped at `md:grid-cols-2` after 3-up at lg let `whitespace-nowrap` content collide on the stats row
+- **Property default language as a first-class column** -- new `properties.default_language` (`text NOT NULL DEFAULT 'en' CHECK ('en','es')`) decouples trainee chrome strings from simulation language. Plumbed end-to-end: SQLModel field → `/auth/me` (`UserRoleOut.property_default_language` + `PropertySummaryOut.default_language`) → `@avellana/domain` (`UserRoleAssignment.propertyDefaultLanguage`, `PropertySummary.defaultLanguage`) → `AuthProvider` normalizer. The simulations page derives `chromeLanguage` from the active role's `propertyDefaultLanguage` with `user.preferredLanguage` fallback. Spanish simulations keep their Spanish title; every chrome label (button, status, `Best`, `attempts`, `ago`) renders in the property's language
+- **Trainee practice-history table redesign** -- "History Polish" handoff from Claude Design applied to `/history`. Eight pixel moves: one shell with toolbar (search + All/Passed/Failed filter chips + row count) over a hairline rule above the table; fixed 56px desktop rows with single-line truncate; date stops wrapping (`Apr 27, 2026` on one line plus mono `today` / `5d ago` underneath); `VIEW DETAILS` two-line all-caps stack collapsed to single-line `View →` link with arrow nudge on row hover; score chip → score bar (mini track + tabular-nums percentage); headers switched to mono small-caps to match the existing meta language
+- **Ask Avellana suggestion-loading polish** -- `/ask-avellana` was flashing the global hardcoded fallback prompts before swapping to the property's seeded ones once `/api/v1/kb/suggestions` settled, which read as a stale flash on every page load. Removed `placeholderData: FALLBACK_SUGGESTED_PROMPTS` from the TanStack Query and gated the suggestion grid on `isPending`, so the empty state shows during the load. Fallback still renders on error or when the API returns an empty list, so users without seeded prompts still get something clickable
+- **Supervisor review page mirrors trainee history layout** -- `/team/review/[sessionId]` was rebuilt so a supervisor opening Diego's session sees the same score hero, AI coach takeaway, per-criterion bars, strengths / areas-to-improve grid, audio replay, and chat-bubble transcript that Diego sees on `/history/[simulationId]`. The only differences are speaker labels (transcript bubbles show the trainee's full name instead of "You") and supervisor-only affordances (flag-reason banner, sticky pending-review resolve bar, ResolveDialog). The bug that surfaced the redesign request was an audio playback failure: the supervisor frontend was calling `GET /sessions/{id}/audio`, which returns the raw storage path, instead of `/sessions/{id}/report`, which signs the URL via Supabase's `create_signed_url`. Switched the supervisor `fetchSupervisorReview` bundle to use `/report` so audio playback reuses the signed URL — same call the trainee history page already makes
 
 ## How It Was Built
 
@@ -186,6 +193,21 @@ Key requests that drove the build, in order:
 79. **Demo richness seed** — "create 8 more trainee employees, with seed data as if they had taken just 2 random simulations each. i want to see a fuller leaderboard. make sure they have realistic-looking names and simulation data like the others"
 80. **One-sim-per-person rule** — "please enforce both in code, and in existing data that a simulation can only be assigned to a person once. so there should never be any duplicates here" (with a dashboard screenshot showing "Room Was Dirty at Check-in" repeated 6+ times)
 81. **Docker port collision resolution** — chose `docker stop sereno-dashboard` over a permanent port change in the Playwright scenarios config, to avoid baking a 3020-port workaround into test infra
+82. **Trainee history table redesign** — "implement the History Polish handoff" with subsequent feedback iteration on the date column, score bar, and View → arrow nudge
+83. **Ask Avellana suggestion-loading flash** — "i don't like the flash where i see the old global suggestions before the seeded ones load"
+84. **Card Redesign hand-off** — "fetch this design file, read its readme, and /plan to reskin the simulation cards as proposed by this design" (with link to the Claude Design artifact bundle and a separate ask: chrome must render in the property's default language, not the simulation's)
+85. **Property default_language column** — chose to add the real DB column + plumb it end-to-end through `/auth/me`, the domain types, and the `AuthProvider` normalizer instead of using `user.preferredLanguage` as a stand-in
+86. **Card polish round 1** — "change the string to 'No attempts', 'Not yet' to 'Failed', language labels should be 2 letters, cards should be wide enough so that text doesn't wrap to 2 lines"
+87. **Sparkline collision fix** — "sparkline of progress overlaps, and button does not fit. please make these 2 cards per line unless you can fit everything without wrapping/overlapping" (with a screenshot of the offending 3-up layout)
+88. **Best capitalization** — "change 'best' to 'Best'. then lgtm" — the green-light trigger that fired Phase B
+89. **Phase B finalize** — full scenario gate (28 specs / 35 runs, 2 unrelated retries) + 755 api pytest + 93 workers pytest + 143 vitest + tsc + ruff + ESLint + 5-file kanban+changelog merge, all green
+90. **Two-phase Definition of Done formalization** — earlier in the project, codified Phase A (fast iteration with `GATE_SKIP=1`, push to dev, verify on `avellana.digital`) and Phase B (full gate + suites + lint, only on a green-light keyword like `lgtm` / `looks good` / `ship it`) in `CLAUDE.md` so every large task announces the two-phase plan up front
+91. **Pending-finalize queue** — added `docs/tasks/pending-finalize/` so a session that ends mid-iteration writes a tracking file with last commit SHA + what to verify on `avellana.digital`, picked up by the next session at start
+92. **Portfolio refresh** — second `/portfolio-update` after the trainee card reskin Phase B closed; bumped frontmatter stats and appended new features, prompts, and the chrome-language decoupling story
+93. **Supervisor review page parity with trainee history** — "the supervisor page for viewing feedback appears to have the same bug as the trainee page had yesterday. also, the ui is wonky. can this page match the trainee's view as much as possible, and only change the labels used to display who did the simulation"
+94. **Batched Phase B finalize across sessions** — "I've made a bunch of changes across various claude code sessions where phase A passed in all of them. Can i simply run phase b lgtm once for all of them? Can you help me decide if this is a good idea in the future, and whether we need to update any documentation?"
+95. **Anchor language via system prompt instead of SDK kwarg** — "let's do b, please" — chose Option B (move BCP-47 anchor into the system_instruction text) over Option A (drop the anchor entirely) after the gate surfaced that `bd54166`'s `language_codes` kwarg on `AudioTranscriptionConfig` is rejected by the Gemini API path of google-genai
+96. **Memory + commit untracked docs** — "yes, save the memory, and skip the korean hallucinations. also, please commit the untracked files" — saved the Vertex-only-kwargs gotcha, ignored `.claude/` harness state, committed four prior-session docs (expert critique, two runbooks, character bio design spec) in a single `docs:` commit
 
 ## Raw Prompts
 
@@ -280,6 +302,26 @@ Substantive user messages from the conversation, preserving original wording:
 > "also, can you please create 8 more trainee employees, with seed data as if they had taken just 2 random simulations each. i want to see a fuller leaderboard. make sure they have realistic-looking names and simlation data like the others."
 
 > "please enforce both in code, and in existing data that a simulation can only be assigned to a person once. so there should never be any duplicates here"
+
+> "Fetch this design file, read its readme, and /plan to reskin the smulation cards as proposed by this design: https://api.anthropic.com/v1/design/h/... Implement: Card Redesign.html. Also, make sure all buttons and labels are in the property's default language, not the simulation language."
+
+> "only change trainee. and everything else is confirmed"
+
+> "do #1 please" (on whether to run `supabase db push` against shared dev Supabase as part of Phase A)
+
+> "a few small things: change the string to 'No attempts', 'Not yet' to 'Failed', language labels should be 2 letters, cards should be wide enough so that text doesn't wrap to 2 lines, etc"
+
+> "sparkline of progress overlaps, and button does not fit. please make these 2 cards per line unless you can fit everything without wrapping/overlapping"
+
+> "change 'best' to 'Best'. then lgtm"
+
+> "the supervisor page for viewing feedback appears to have the same bug as the trainee page had yesterday. also, the ui is wonky. can this page match the trainee's view as much as possible, and only change the labels used to display who did the simulation (trainee vs current user supervisor)?"
+
+> "I've made a bunch of changes across various claude code sessions where phase A passed in all of them. Can i simply run phase b lgtm once for all of them? Can you help me decide if this is a good idea in the future, and whether we need to update any documentation?"
+
+> "let's do b, please"
+
+> "yes, save the memory, and skip the korean hallucinations. also, please commit the untracked files"
 
 ## Technical Challenges
 
@@ -469,6 +511,65 @@ Substantive user messages from the conversation, preserving original wording:
 
 **Solution:** Added `-w "%{http_code}"` to log the status explicitly, then changed the success criteria: any HTTP response (including 401) proves Supabase is alive and prevents pausing. Only a `000` (no response) is treated as failure.
 
+### Decoupling trainee chrome language from simulation language
+
+**Problem:** A Spanish-speaking trainee sees a Spanish simulation (`Reclamo por ruido en la habitación 305`) on their dashboard. Today the entire card chrome — button label (`Practice again`), status (`Passed`), `best 84%`, `4 attempts · 11d ago` — was rendered in the simulation's language because `langOf(sim)` keyed off `sim.language`. The product intent was the opposite: chrome stays in the property's default language so the UI feels stable, while the simulation title remains in the language a trainee will speak. The fix was *not* a string-table tweak; it required a real product-data signal that didn't exist yet.
+
+**Root cause:** No `properties.default_language` column existed. The frontend was inferring chrome locale from whichever sim was being rendered. Three reasonable options surfaced: (a) use `user.preferredLanguage` as a stand-in, (b) hard-code `'en'` and lose Spanish trainees entirely, (c) add the column for real and plumb it through. The user picked (c). Once that decision was made, the work fanned out across the API (`Property` SQLModel + `/auth/me` schemas + five `PropertySummaryOut` call sites in `routes/orgs.py`), the shared domain package (`UserRoleAssignment.propertyDefaultLanguage` + `PropertySummary.defaultLanguage`), the `AuthProvider` snake→camel normalizer, and the simulations page (derive `chromeLanguage` from active role's `propertyDefaultLanguage` with `user.preferredLanguage` fallback). The card itself stopped consulting `sim.language` for chrome and only used it for the tag-row 2-letter code.
+
+**Solution:** Migration `20260428130000_property_default_language.sql` (`text NOT NULL DEFAULT 'en' CHECK ('en','es')`) — additive, existing rows backfill to `'en'`, no downtime risk. SQLModel field with default. Pydantic schemas extended. `/auth/me` route reads `p.default_language` while building `roles_out` and `orgs_out`. Frontend `AuthProvider` maps the new fields. `simulations/page.tsx` computes `chromeLanguage` once and passes to every card. `SimulationCard` takes a `chromeLanguage: 'en' | 'es'` prop, drops `langOf(sim)`, and resolves all chrome strings off `STRINGS[chromeLanguage]`. Test coverage proves the decoupling: a Spanish sim under English chrome renders the title in Spanish but every label in English, and vice versa. Migration applied to staging Supabase before the API redeployed; staging `/auth/me` smoked live to confirm the new fields land.
+
+**Debugging approach:** Started with an Explore-agent inventory of the existing `SimulationCard.tsx`, its tests, the page that renders it, and the i18n setup (none — it was a hardcoded `STRINGS[lang]` map). `AskUserQuestion` to resolve the proxy-vs-real-column choice before planning. Vitest caught two Spanish-chrome regressions on the first run (the `<b>` element inside `· best 84%` was breaking `getByText` matchers across element boundaries — added a `data-testid="best-score"` and asserted `textContent`). Live verification on `avellana.digital/simulations` walked four card states (passed-trend, first-try, fail-mixed, not-attempted) plus chrome-language matrix. After the user flagged `whitespace-nowrap` content colliding at 3-up, capped the grid to `md:grid-cols-2` rather than re-architect the row.
+
+### Vertex-only google-genai kwarg crashed `/sessions/start` for two days — caught at Phase B finalize
+
+**Problem:** Five Playwright scenarios — `journey-assign-run-review`, `regression-multi-policy-grounding`, `regression-session-end-fallback`, `session-auto-complete`, and `trainee-call-ui-caller-card` — all hit `POST /api/v1/sessions/start` and got back `500 Internal Server Error`. The unit tests were green; the gate had been red since `bd54166` was pushed earlier the same day. The supervisor review work that triggered the Phase B finalize hadn't touched the backend at all.
+
+**Root cause:** `bd54166` ("strip `<<SYS:END>>` from transcript and anchor ASR language") added one line to `voice_session.py`'s `connect`:
+
+```python
+transcription_kwargs["language_codes"] = [bcp47]
+```
+
+…and passed it to both `input_audio_transcription` and `output_audio_transcription` on `LiveConnectConfig`. The intent was to anchor ASR/TTS language so a Spanish session would stop hallucinating Korean text from post-farewell silence. But the `google-genai` SDK has two converter paths — `_to_mldev` for the Gemini API and `_to_vertex` for Vertex — and `_AudioTranscriptionConfig_to_mldev` raises `ValueError: language_codes parameter is not supported in Gemini API.` That kwarg only works on Vertex. Every real Live session crashed at connect time.
+
+**Why unit tests didn't catch it:** the existing `test_voice_session.py` tests stub `genai.Client` with a `_FakeClient` whose `connect` only inspects the dataclass shape. The SDK's converter validator never runs against a fake client, so the assertion `config.input_audio_transcription.language_codes == ["es-US"]` passed cleanly while the real path would have raised before the dataclass was even built.
+
+**Solution:** Option B from a small menu of fixes. Drop `language_codes` from the SDK kwargs (revert to empty `AudioTranscriptionConfig()`), and prepend a short BCP-47 anchor onto `system_instruction` instead:
+
+```python
+if bcp47:
+    system_instruction = (
+        f"All audio transcription and speech output MUST use {bcp47}. "
+        "Do not produce any output in any other language.\n\n"
+        f"{system_instruction}"
+    )
+```
+
+Same intent, Gemini-API-compatible mechanism. The two unit tests that asserted on `config.input_audio_transcription.language_codes` were rewritten to assert the anchor lands in the system prompt before the original prompt body.
+
+**Debugging approach:** First clue was that the gate's exit code (0) disagreed with the report ("5 failed"). Pulled the request_ids from the Playwright error context (`33761d35a2d44d0a`, `28f9733f631a4669`) and grepped `/tmp/dev-api.log` for them. The first match landed the full traceback in one read — a single `ValueError` with the exact upstream filename and line number (`google/genai/_live_converters.py:32`). Verified the bug was pre-existing rather than introduced by the supervisor review work by checking commit ordering: `bd54166` (10:46) shipped before `d976755` (the supervisor commit, ~14:00) and `e6ae677` (test-notif cleanup), and the last green gate timestamp in `.gate-cache/last-pass` mapped to commit `8d6b032` from 03:02. The fix needed a commit-message disclosure that this Phase B finalize was sweeping for two pending tasks plus the gate-blocking regression. Saved the gotcha as a memory (`feedback_genai_vertex_only_kwargs.md`) so future sessions don't try `language_codes` again.
+
+### Supervisor session audio replay — `/audio` returned the raw storage path
+
+**Problem:** Supervisors clicking into a session review page saw the audio player throw `DEMUXER_ERROR_COULD_NOT_OPEN: FFmpegDemuxer: open context failed` with `network=3 ready=0`. The same recordings played fine on the trainee history page. Both pages used the identical `AudioReplayPlayer` component with a hidden `<audio src={url}>`.
+
+**Root cause:** Two different backend endpoints, two different URL behaviors. The trainee `/sessions/{id}/report` route signs the recording URL inline via Supabase's `create_signed_url(recording.audio_url, expires_in=3600)` before returning. The supervisor page was hitting `/sessions/{id}/audio`, which returns the raw `recording.audio_url` field — a relative storage path inside the bucket, not a fetchable URL. The browser tried to load it relative to `avellana.digital/team/review/...`, got back an HTML 404 page, and the audio element fired DEMUXER_ERROR with `networkState=3` (NO_SOURCE).
+
+**Solution:** Switched the supervisor `fetchSupervisorReview` bundle to call `/sessions/{id}/report` (the trainee endpoint) instead of `/audio` + `/transcript`. The `/report` response shape (`SessionReport`) already carries the signed audio URL plus `character_name`, `duration_seconds`, `transcript[]` with `at_seconds`, and `criteria_scores` — everything the rebuilt supervisor layout needs. The supervisor-only flag fields (`flag_status`, `flag_reason`, `evaluation_id`) still come from `/api/v1/evaluations?session_id=` in parallel. Two API calls instead of three, all returning data shaped for the trainee-style layout.
+
+**Debugging approach:** Started by reading the trainee history page (which Fernando confirmed had been fixed yesterday) and grepping for the audio URL flow. The `/report` route's `_sign()` helper in `apps/api/app/routes/sessions.py:888` was the giveaway — it explicitly converts `recording.audio_url` from a path to a signed URL via `client.storage.from_(STORAGE_BUCKET).create_signed_url(...)`. Then re-read the supervisor fetcher and confirmed `/audio` returns `AudioUrlOut(url=recording.audio_url)` with no signing. Moving to `/report` was a smaller delta than adding signing logic to `/audio`, and it had the side benefit of letting the supervisor page reuse the trainee layout components verbatim (same data shape).
+
+### Iteration commits with `GATE_SKIP=1`, finalize commits with the full gate
+
+**Problem:** The scenario gate takes ~7 minutes to run end-to-end. On a fast inner loop (push, verify on `avellana.digital`, edit, push), running the full gate on every push burned 30+ minutes of wall clock per hour of real work. Worse, gate flakes (Supabase pooler 401 on `luis`, dev-server-overload timeouts) made an unrelated red look like a regression in *whatever was just changed*, which derailed iteration on every push that happened to hit a flake.
+
+**Root cause:** Trying to use one gate as both the iteration safety net and the finalize gate. Iteration wants speed and tolerance for unrelated flakes; finalize wants completeness and zero-tolerance. Conflating them meant either iterating slowly or finalizing weakly.
+
+**Solution:** Codified a two-phase Definition of Done in `CLAUDE.md`. Phase A (fast inner loop, gate-skipped): impacted-test-only `scripts/dev-check.sh`, `GATE_SKIP=1 /commit-smart`, push, verify live on `avellana.digital`, loop on user feedback. Phase B (one-time finalize sweep, only on a green-light keyword like `lgtm` / `looks good` / `ship it` / `green light`): full scenario gate, full pytest, full vitest, tsc, ruff, ESLint, in parallel where independent. Every large task announces the two-phase plan in one sentence at the top of the relevant turn so the user knows exactly which keyword fires the slow checks. A `docs/tasks/pending-finalize/` queue handles sessions that end mid-iteration: a tracking file gets written with last commit SHA + what to verify, picked up at the next session start. The trainee card reskin used this loop end-to-end: 5 Phase A commits (`06148f7..d72fed0`) over an hour of iteration, then a single Phase B sweep on `lgtm` that ran the full gate (28 specs / 35 runs, 2 unrelated retries) plus all units + lint in parallel and merged the kanban + changelog updates queued by parallel agents earlier the same day.
+
+**Debugging approach:** No debugging — this was a workflow refactor. The trigger was watching the gate eat 30 minutes of an hour-long iteration session. The fix was a discipline change codified in `CLAUDE.md` plus a pending-finalize queue so the discipline survives session boundaries. The test was whether the next large task (this trainee card reskin) actually ran the loop cleanly: 5 fast iteration pushes, then a single Phase B on `lgtm` that surfaced zero failures and merged the doc updates atomically.
+
 ## Architecture
 
 Key technical decisions:
@@ -489,3 +590,7 @@ Key technical decisions:
 - **Content route factory via closure capture** -- `_register_content_type(cfg)` in `content.py` generates all 7 standard endpoints per resource type using closure capture (not default-parameter injection or `**kwargs`). `Path(alias=item_id)` separates the URL segment name from the Python identifier, satisfying both FastAPI's introspection and each resource's naming convention
 - **Observability with zero production overhead when off** -- Sentry integration no-ops when `SENTRY_DSN` is empty so local dev stays offline. Budget gate is disabled by `BUDGET_CHECK_ENABLED=false` for tests and emergencies. Structured JSON logger reads ContextVars via a filter so `request_id`/`user_id`/`session_id` appear on every record without per-log-call plumbing. `X-Request-Id` header echoed on every HTTP response so a single ID correlates the full lifecycle of a simulation across API + WebSocket + pgmq worker
 - **Cross-table uniqueness via denormalization + trigger** -- when a uniqueness rule spans two tables (assignment_recipients.user_id + assignments.simulation_id), Postgres cannot express it as a single unique constraint. Pattern used here: denormalize the parent's column onto the child, maintain with a `BEFORE INSERT` trigger, then add a partial unique index on the child. Belt-and-suspenders with an application-level filter on the service layer. Seed scripts and raw-SQL paths get caught by the index even if they bypass the API
+- **Chrome language is a property-level signal, not a per-render guess** -- trainee dashboard chrome (button labels, status, footer meta) renders in the property's `default_language`, not the simulation's `language`. New `properties.default_language` column flows through `/auth/me`, `@avellana/domain`'s `UserRoleAssignment.propertyDefaultLanguage`, and the `AuthProvider` normalizer. The simulations page derives `chromeLanguage` once with a `propertyDefaultLanguage → user.preferredLanguage → 'en'` fallback chain and passes it to every card; `SimulationCard` only consults `sim.language` for the 2-letter tag-row code. The trade-off discussed before committing: use `user.preferredLanguage` as a proxy (zero new DB work) vs. add the real column (cleaner semantically, ~2× the diff). User picked the real column; the migration is purely additive (NOT NULL DEFAULT 'en' with a CHECK), so existing rows backfill safely
+- **One green-light, many pending finalizes** -- the Phase A / Phase B Definition of Done was extended so a single `lgtm` can finalize multiple pending tasks at once via `docs/tasks/pending-finalize/` entries that accumulate across sessions. CLAUDE.md spells out the rule explicitly: when the batched gate goes red, bisect by reverting a subset of the changes rather than guessing — a single `language_codes` regression earlier in the day, three commits before the supervisor work, would otherwise have been hard to attribute to "the right commit" mid-finalize. The pending-finalize files give every Phase A task a frozen-in-time pointer (last commit SHA + what to verify on `avellana.digital`) so Phase B can sweep cleanly even if it happens days later
+- **Signed audio URLs at the API boundary, not the storage helper** -- `simulation_audio_recordings.audio_url` stores the relative path inside the `session-audio` Supabase bucket, never a public or signed URL. Both `/sessions/{id}/report` and (now) the supervisor review pipeline sign the URL inline at the route layer via `client.storage.from_(STORAGE_BUCKET).create_signed_url(path, expires_in=3600)` before returning it to the browser, with the signing wrapped in `loop.run_in_executor` so the storage SDK's sync call doesn't block the event loop. This keeps the URL ephemeral (1-hour TTL) and means the DB never holds a stale signed URL that outlives its expiration
+- **Two-phase Definition of Done — fast iteration, single finalize** -- Phase A is the fast inner loop: impacted tests only via `scripts/dev-check.sh`, `GATE_SKIP=1 /commit-smart`, push, verify on `avellana.digital`, loop on user feedback. Phase B is the one-time finalize sweep, fired only on a green-light keyword (`lgtm` / `looks good` / `ship it` / `green light`): full scenario gate, full pytest, full vitest, tsc, ruff, ESLint, all in parallel where independent. A `docs/tasks/pending-finalize/` queue handles sessions that end mid-iteration: a tracking file gets written with the last commit SHA and what to verify, picked up at the next session start. Every large task announces the two-phase plan in one sentence at the top of the turn so the user knows which keyword fires the slow checks
